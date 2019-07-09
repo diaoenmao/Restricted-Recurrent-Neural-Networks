@@ -41,26 +41,7 @@ def SSIM(output, target, window_size=11, MAX=1, window=None, full=False):
                 cs = (2*sigma12+C2)/(sigma1_sq+sigma2_sq+C2)
                 cs[torch.isnan(cs)] = 1
                 cs = cs.mean().item()
-                return ssim, cs
-        elif(isinstance(output,list)):
-            if(full):
-                ssim = 0
-                cs = 0
-                for i in range(len(output)):
-                    _ssim,_cs = SSIM(output[i].unsqueeze(0),target[i].unsqueeze(0),window_size=window_size,MAX=MAX,window=window,full=full)
-                    ssim +=_ssim
-                    cs += _cs
-                ssim = ssim/len(output)
-                cs = cs/len(output)
-                return ssim, cs
-            else:
-                ssim = 0
-                for i in range(len(output)):
-                    ssim += SSIM(output[i].unsqueeze(0),target[i].unsqueeze(0),window_size=window_size,MAX=MAX,window=window,full=full)
-                ssim = ssim/len(output)
-                return ssim
-        else:
-            raise ValueError('Data type not supported')        
+                return ssim, cs     
     return ssim
     
 def MSSIM(output, target, window_size=11, MAX=1):
@@ -96,45 +77,14 @@ def PSNR(output,target,MAX=1.0):
     with torch.no_grad():
         max = torch.tensor(MAX).to(device)
         criterion = nn.MSELoss().to(device)
-        if(isinstance(output,torch.Tensor)):
-            output = output.expand(target.size())
-            mse = criterion(output,target)
-            psnr = (20*torch.log10(max)-10*torch.log10(mse)).item()
-        elif(isinstance(output,list)):
-            psnr = 0
-            for i in range(len(output)):
-                psnr += PSNR(output[i].unsqueeze(0),target[i].unsqueeze(0),MAX=max.item())
-            psnr = psnr/len(output)
-        else:
-            raise ValueError('Data type not supported')
+        mse = criterion(output,target)
+        psnr = (20*torch.log10(max)-10*torch.log10(mse)).item()
     return psnr
     
-def BPP(code,img):
+def BPP(nbytes,img):
     with torch.no_grad():
-        if(isinstance(code,torch.Tensor)):
-            nbytes = code.cpu().numpy().nbytes
-        elif(isinstance(code,np.ndarray)):
-            nbytes = code.nbytes
-        elif(isinstance(code,list)):
-            nbytes = 0 
-            for i in range(len(code)):
-                if(isinstance(code[i],torch.Tensor)):
-                    nbytes += code[i].cpu().numpy().nbytes
-                elif(isinstance(code[i],np.ndarray)):
-                    nbytes += code[i].nbytes
-                else:
-                    raise ValueError('Data type not supported')
-        else:
-            raise ValueError('Data type not supported')
-        if(isinstance(img,torch.Tensor)):
-            num_pixel = img.numel()/img.size(1)
-        elif(isinstance(img,list)):
-            num_pixel = 0 
-            for i in range(len(img)):  
-                num_pixel += img[i].numel()/img[i].size(0)
-        else:
-            raise ValueError('Data type not supported')
-        bpp = 8*nbytes/num_pixel
+        num_pixel = img.numel()/img.size(1)
+        bpp = (8*nbytes/num_pixel)
     return bpp
 
 def BER(output,target):
@@ -338,7 +288,7 @@ class Metric(object):
             if('mssim' in metric_names):
                 evaluation['mssim'] = MSSIM(output['compression']['img'],input['img'])
             if('bpp' in metric_names):
-                evaluation['bpp'] = BPP(output['compression']['code'],input['img'])
+                evaluation['bpp'] = BPP(output['compression']['code_size'],input['img'])
         if('classification' in config.PARAM['tuning_param'] and config.PARAM['tuning_param']['classification'] > 0):
             topk=config.PARAM['topk']
             if(self.if_save):

@@ -37,8 +37,7 @@ def runExperiment(model_TAG):
     randomGen = np.random.RandomState(seed)
 
     dataset = {}
-    _,dataset['test'] = fetch_dataset(data_name=config.PARAM['data_name']['test'])
-    config.PARAM['classes_size'] = dataset['test'].classes_size
+    dataset['test'] = fetch_dataset(data_name=config.PARAM['data_name']['test'])['test']
     data_loader = split_dataset(dataset,data_size=config.PARAM['data_size'],batch_size=config.PARAM['batch_size'],radomGen=randomGen)
     print(config.PARAM)    
     print('Test data size {}, Number of Batches {}'.format(config.PARAM['data_size']['test'],len(data_loader['test']))) 
@@ -64,7 +63,7 @@ def test(validation_loader,model,epoch,model_TAG):
             output['loss'] = torch.mean(output['loss']) if(world_size > 1) else output['loss']
             evaluation = meter_panel.eval(input,output,config.PARAM['metric_names']['test'])
             batch_time = time.time() - end
-            meter_panel.update(evaluation,batch_size)
+            meter_panel.update(evaluation,len(input['img']))
             meter_panel.update({'batch_time':batch_time})
             end = time.time()
     return meter_panel
@@ -75,7 +74,7 @@ def collate(input):
     return input
         
 def print_result(model_TAG,epoch,result):
-    print('Test Epoch({}): {}({}_{}){}'.format(model_TAG,epoch,result.summary(['loss']+config.PARAM['metric_names']['test'])))
+    print('Test Epoch({}): {}{}'.format(model_TAG,epoch,result.summary(['loss']+config.PARAM['metric_names']['test'])))
     return
     
 if __name__ == "__main__":

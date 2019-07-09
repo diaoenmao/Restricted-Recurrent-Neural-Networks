@@ -27,8 +27,8 @@ for k in config.PARAM:
 def main():
     seeds = list(range(config.PARAM['init_seed'],config.PARAM['init_seed']+config.PARAM['num_Experiments']))
     for i in range(config.PARAM['num_Experiments']):
-        model_TAG = '{}_{}_{}'.format(seeds[i],config.PARAM['data_name']['train'],config.PARAM['model_name']) \
-            if(config.PARAM['special_TAG']=='') else '{}_{}_{}_{}'.format(seeds[i],config.PARAM['data_name']['train'],config.PARAM['model_name'],config.PARAM['special_TAG'])
+        model_TAG = '{}_{}_{}_{}'.format(seeds[i],config.PARAM['data_name']['train'],config.PARAM['model_name'],config.PARAM['control_name']) \
+            if(config.PARAM['special_TAG']=='') else '{}_{}_{}_{}_{}'.format(seeds[i],config.PARAM['data_name']['train'],config.PARAM['model_name'],config.PARAM['control_name'],config.PARAM['special_TAG'])
         print('Experiment: {}'.format(model_TAG))
         runExperiment(model_TAG)
     return
@@ -40,15 +40,14 @@ def runExperiment(model_TAG):
     torch.cuda.manual_seed(seed)
     config.PARAM['randomGen'] = np.random.RandomState(seed)
     dataset = {}
-    dataset['train'],_ = fetch_dataset(data_name=config.PARAM['data_name']['train'])
-    _,dataset['test'] = fetch_dataset(data_name=config.PARAM['data_name']['test'])
-    config.PARAM['classes_size'] = dataset['train'].classes_size
+    dataset['train'] = fetch_dataset(data_name=config.PARAM['data_name']['train'])['train']
+    dataset['test'] = fetch_dataset(data_name=config.PARAM['data_name']['test'])['test']
     data_loader = split_dataset(dataset,data_size=config.PARAM['data_size'],batch_size=config.PARAM['batch_size'],radomGen=config.PARAM['randomGen'])
     print(config.PARAM)
     print('Training data size {}, Number of Batches {}'.format(config.PARAM['data_size']['train'],len(data_loader['train'])))
     print('Test data size {}, Number of Batches {}'.format(config.PARAM['data_size']['test'],len(data_loader['test'])))
     
-    model = eval('models.{}(\'{}\').to(device)'.format(config.PARAM['model_name'],model_TAG))
+    model = eval('models.{}().to(device)'.format(config.PARAM['model_name']))
     optimizer = make_optimizer(model)
     scheduler = make_scheduler(optimizer)
     if(config.PARAM['resume_mode'] == 1):
@@ -68,9 +67,9 @@ def runExperiment(model_TAG):
     for epoch in range(last_epoch, config.PARAM['num_epochs']+1):
         cur_train_meter_panel = train(data_loader['train'],model,optimizer,epoch,model_TAG)
         cur_test_meter_panel = test(data_loader['test'],model,epoch,model_TAG)
-        print_result(model_TAG,epoch,cur_train_meter_panel,cur_test_meter_panel)
+        print_result(model_TAG,epoch,cur_train_meter_panel,cur_test_meter_panel,optimizer.param_groups[0]['lr'])
         if(config.PARAM['scheduler_name'] == 'ReduceLROnPlateau'):
-            scheduler.step(metrics=cur_test_meter_panel.panel['loss'].avg,epoch=epoch+1)
+            scheduler.step(metrics=cur_train_meter_panel.panel['loss'].avg,epoch=epoch+1)
         else:
             scheduler.step(epoch=epoch+1)
         train_meter_panel.update(cur_train_meter_panel)
@@ -96,6 +95,7 @@ def train(train_loader,model,optimizer,epoch,model_TAG):
         output['loss'] = torch.mean(output['loss']) if(world_size > 1) else output['loss']                                                                                          
         optimizer.zero_grad()
         output['loss'].backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(),0.5)
         optimizer.step()
         evaluation = meter_panel.eval(input,output,config.PARAM['metric_names']['train'])
         batch_time = time.time() - end
@@ -115,6 +115,7 @@ def test(validation_loader,model,epoch,model_TAG):
         end = time.time()
         for i, input in enumerate(validation_loader):
             input = collate(input)
+            input['img'] = input['img'].view(-1,*input['img'].size()[-3:])
             input = dict_to_device(input,device)
             output = model(input)
             output['loss'] = torch.mean(output['loss']) if(world_size > 1) else output['loss']
@@ -123,13 +124,18 @@ def test(validation_loader,model,epoch,model_TAG):
             meter_panel.update(evaluation,len(input['img']))
             meter_panel.update({'batch_time':batch_time})
             end = time.time()
+            if(i == 0 and config.PARAM['show']):
+                save_img(input['img'],'./output/img/image.png')
+                save_img(output['compression']['img'],'./output/img/image_reconstructed_{}.png'.format(epoch))
     return meter_panel
 
 def make_optimizer(model):
     if(config.PARAM['optimizer_name']=='Adam'):
-        optimizer = optim.Adam(model.parameters(),lr=config.PARAM['lr'])
+        optimizer = optim.Adam(model.parameters(),lr=config.PARAM['lr'],weight_decay=config.PARAM['weight_decay'])
     elif(config.PARAM['optimizer_name']=='SGD'):
-        optimizer = optim.SGD(model.parameters(),lr=config.PARAM['lr'], momentum=0.9, weight_decay=config.PARAM['weight_decay'])
+        optimizer = optim.SGD(model.parameters(),lr=config.PARAM['lr'],momentum=0.9,weight_decay=config.PARAM['weight_decay'])
+    elif(config.PARAM['optimizer_name']=='ASGD'):
+        optimizer = optim.ASGD(model.parameters(),lr=config.PARAM['lr'],weight_decay=config.PARAM['weight_decay'])
     else:
         raise ValueError('Optimizer name not supported')
     return optimizer
@@ -141,6 +147,8 @@ def make_scheduler(optimizer):
         scheduler = ReduceLROnPlateau(optimizer,mode='min',factor=config.PARAM['factor'],verbose=True,threshold=config.PARAM['threshold'],threshold_mode=config.PARAM['threshold_mode'])
     elif(config.PARAM['scheduler_name']=='CosineAnnealingLR'):
         scheduler = CosineAnnealingLR(optimizer, config.PARAM['num_epochs'])
+    elif(config.PARAM['scheduler_name']=='none'):
+        scheduler = MultiStepLR(optimizer,milestones=[65535],gamma=config.PARAM['factor'])
     else:
         raise ValueError('Scheduler_name name not supported')
     return scheduler
@@ -150,9 +158,9 @@ def collate(input):
         input[k] = torch.stack(input[k],0)
     return input
  
-def print_result(model_TAG,epoch,train_meter_panel,test_meter_panel):
-    estimated_finish_time = str(datetime.timedelta(seconds=(config.PARAM['num_epochs'] - epoch)*train_meter_panel.panel['batch_time'].sum))
-    print('***Test Epoch({}): {}{}{}, Estimated Finish Time: {}'.format(model_TAG,epoch,test_meter_panel.summary(['loss']+config.PARAM['metric_names']['test']),train_meter_panel.summary(['batch_time']),estimated_finish_time))
+def print_result(model_TAG,epoch,train_meter_panel,test_meter_panel,lr):
+    estimated_finish_time = str(datetime.timedelta(seconds=(config.PARAM['num_epochs']-epoch)*train_meter_panel.panel['batch_time'].sum))
+    print('***Test Epoch({}): {}{}, Estimated Finish Time: {}, Learnint Rate: {}'.format(model_TAG,epoch,test_meter_panel.summary(['loss']+config.PARAM['metric_names']['test']),estimated_finish_time,lr))
     return
 
 def resume(model,optimizer,scheduler,model_TAG):

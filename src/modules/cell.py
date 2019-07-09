@@ -6,10 +6,11 @@ import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
 from collections import OrderedDict
-from modules.channel import Channel  
+from modules.channel import Channel
+from modules.decor import decorConv2d 
 from modules.shuffle import PixelUnShuffle,PixelShuffle
 from modules.organic import oConv2d
-from modules.decor import decorConv2d
+from modules.quantization import Quantization 
 from utils import ntuple,gumbel_softmax,gumbel_softrank
 
 device = config.PARAM['device']
@@ -60,13 +61,19 @@ class BasicCell(nn.Module):
         if(cell_info['mode']=='down'):
             cell_in_info = {'cell':'Conv2d','input_size':cell_info['input_size'],'output_size':cell_info['output_size'],
                         'kernel_size':3,'stride':2,'padding':1,'dilation':1,'groups':cell_info['groups'],'bias':cell_info['bias']}
-        elif(cell_info['mode']=='downsample'):
+        elif(cell_info['mode']=='4down'):
             cell_in_info = {'cell':'Conv2d','input_size':cell_info['input_size'],'output_size':cell_info['output_size'],
-                        'kernel_size':2,'stride':2,'padding':0,'dilation':1,'groups':cell_info['groups'],'bias':cell_info['bias']}
+                        'kernel_size':4,'stride':2,'padding':1,'dilation':1,'groups':cell_info['groups'],'bias':cell_info['bias']}
         elif(cell_info['mode']=='pass'):
             cell_in_info = {'cell':'Conv2d','input_size':cell_info['input_size'],'output_size':cell_info['output_size'],
                         'kernel_size':3,'stride':1,'padding':1,'dilation':1,'groups':cell_info['groups'],'bias':cell_info['bias']}
-        elif(cell_info['mode']=='upsample'):
+        elif(cell_info['mode']=='5pass'):
+            cell_in_info = {'cell':'Conv2d','input_size':cell_info['input_size'],'output_size':cell_info['output_size'],
+                        'kernel_size':5,'stride':1,'padding':2,'dilation':1,'groups':cell_info['groups'],'bias':cell_info['bias']}
+        elif(cell_info['mode']=='4up'):
+            cell_in_info = {'cell':'ConvTranspose2d','input_size':cell_info['input_size'],'output_size':cell_info['output_size'],
+                        'kernel_size':4,'stride':2,'padding':1,'output_padding':0,'dilation':1,'groups':cell_info['groups'],'bias':cell_info['bias']}
+        elif(cell_info['mode']=='2up'):
             cell_in_info = {'cell':'ConvTranspose2d','input_size':cell_info['input_size'],'output_size':cell_info['output_size'],
                         'kernel_size':2,'stride':2,'padding':0,'output_padding':0,'dilation':1,'groups':cell_info['groups'],'bias':cell_info['bias']}
         elif(cell_info['mode']=='fc'):
@@ -75,22 +82,19 @@ class BasicCell(nn.Module):
         elif(cell_info['mode']=='fc_down'):
             cell_in_info = {'cell':'Conv2d','input_size':cell_info['input_size'],'output_size':cell_info['output_size'],
                         'kernel_size':1,'stride':2,'padding':0,'dilation':1,'groups':cell_info['groups'],'bias':cell_info['bias']}
+        elif(cell_info['mode']=='fc_up'):
+            cell_in_info = {'cell':'ConvTranspose2d','input_size':cell_info['input_size'],'output_size':cell_info['output_size'],
+                        'kernel_size':1,'stride':2,'padding':0,'output_padding':1,'dilation':1,'groups':cell_info['groups'],'bias':cell_info['bias']}
         else:
             raise ValueError('model mode not supported')
         cell['in'] = Cell(cell_in_info)
         cell['activation'] = Cell({'cell':'Activation','mode':cell_info['activation']})
-        cell['normalization'] = Cell({'cell':'Normalization','input_size':cell_info['input_size'],'mode':cell_info['normalization']}) if(cell_info['order']=='before') else \
-        Cell({'cell':'Normalization','input_size':cell_info['output_size'],'mode':cell_info['normalization']})
+        cell['normalization'] = Cell({'cell':'Normalization','input_size':cell_info['output_size'],'mode':cell_info['normalization']})
         return cell
         
     def forward(self, input):
         x = input
-        if(self.cell_info['order']=='before'):
-            x = self.cell['in'](self.cell['activation'](self.cell['normalization'](x)))
-        elif(self.cell_info['order']=='after'):
-            x = self.cell['activation'](self.cell['normalization'](self.cell['in'](x)))
-        else:
-            raise ValueError('wrong order')
+        x = self.cell['activation'](self.cell['normalization'](self.cell['in'](x)))
         return x
 
 class ResBasicCell(nn.Module):
@@ -105,6 +109,9 @@ class ResBasicCell(nn.Module):
         for i in range(cell_info['num_layer']):
             if(cell_info['mode'] == 'down'):
                 cell_shortcut_info = {'input_size':cell_info['input_size'],'output_size':cell_info['output_size'],'cell':'BasicCell','mode':'fc_down',
+                'normalization':cell_info['normalization'],'activation':'none'}
+            elif(cell_info['mode'] == 'up'):
+                cell_shortcut_info = {'input_size':cell_info['input_size'],'output_size':cell_info['output_size'],'cell':'BasicCell','mode':'fc_up',
                 'normalization':cell_info['normalization'],'activation':'none'}
             elif(cell_info['input_size'] != cell_info['output_size']):
                 cell_shortcut_info = {'input_size':cell_info['input_size'],'output_size':cell_info['output_size'],'cell':'BasicCell','mode':'fc',
@@ -144,14 +151,17 @@ class GroupResBasicCell(nn.Module):
         for i in range(cell_info['num_layer']):
             if(cell_info['mode'] == 'down'):
                 cell_shortcut_info = {'input_size':cell_info['input_size'],'output_size':cell_info['output_size'],'cell':'BasicCell','mode':'fc_down',
-                'normalization':cell_info['normalization'],'activation':'none'}
+                'normalization':cell_info['normalization'],'activation':'none','groups':cell_info['groups']}
+            elif(cell_info['mode'] == 'up'):
+                cell_shortcut_info = {'input_size':cell_info['input_size'],'output_size':cell_info['output_size'],'cell':'BasicCell','mode':'fc_up',
+                'normalization':cell_info['normalization'],'activation':'none','groups':cell_info['groups']}
             elif(cell_info['input_size'] != cell_info['output_size']):
                 cell_shortcut_info = {'input_size':cell_info['input_size'],'output_size':cell_info['output_size'],'cell':'BasicCell','mode':'fc',
-                'normalization':cell_info['normalization'],'activation':'none'}
+                'normalization':cell_info['normalization'],'activation':'none','groups':cell_info['groups']}
             else:
                 cell_shortcut_info = {'cell':'none'}
             cell_in_info = {'input_size':cell_info['input_size'],'output_size':cell_info['output_size'],'cell':'BasicCell','mode':cell_info['mode'],
-            'normalization':cell_info['normalization'],'activation':cell_info['activation']}
+            'normalization':cell_info['normalization'],'activation':cell_info['activation'],'groups':cell_info['groups']}
             cell_out_info = {'input_size':cell_info['output_size'],'output_size':cell_info['output_size'],'cell':'BasicCell','mode':'pass',
             'normalization':cell_info['normalization'],'activation':'none','groups':cell_info['groups']}
             cell[i]['shortcut'] = Cell(cell_shortcut_info)
@@ -385,22 +395,26 @@ class GroupDenseCell(nn.Module):
         cell_info = copy.deepcopy(self.cell_info)
         cell = nn.ModuleList([nn.ModuleDict({}) for _ in range(cell_info['num_layer'])])
         for i in range(cell_info['num_layer']):
-            cell_in_info = {'input_size':cell_info['input_size'],'output_size':cell_info['bottleneck']*cell_info['growth_rate'],'cell':'BasicCell','mode':'fc',
-            'normalization':cell_info['normalization'],'activation':cell_info['activation'],'order':'before'}
-            cell_out_info = {'input_size':cell_info['bottleneck']*cell_info['growth_rate'],'output_size':cell_info['growth_rate'],'cell':'BasicCell','mode':'pass',
-            'normalization':cell_info['normalization'],'activation':cell_info['activation'],'groups':cell_info['groups'],'order':'before'}
+            cell_in_info = {'input_size':cell_info['input_size'],'output_size':cell_info['bottleneck']*cell_info['growth_rate']*cell_info['groups'],'cell':'BasicCell','mode':'fc',
+            'normalization':cell_info['normalization'],'activation':cell_info['activation'],'groups':cell_info['groups']}
+            cell_out_info = {'input_size':cell_info['bottleneck']*cell_info['growth_rate']*cell_info['groups'],'output_size':cell_info['growth_rate']*cell_info['groups'],'cell':'BasicCell','mode':'pass',
+            'normalization':cell_info['normalization'],'activation':cell_info['activation'],'groups':cell_info['groups']}
             cell[i]['in'] = Cell(cell_in_info)
             cell[i]['out'] = Cell(cell_out_info)
-            cell_info['input_size'] = cell_info['input_size'] + cell_info['growth_rate']
+            cell_info['input_size'] = cell_info['input_size'] + cell_info['growth_rate']*cell_info['groups']
         return cell
         
     def forward(self, input):
         x = input
         for i in range(len(self.cell)):
-            shortcut = x
+            shortcut = x.chunk(self.cell_info['groups'],dim=1)
             x = self.cell[i]['in'](x)
             x = self.cell[i]['out'](x)
-            x = torch.cat([shortcut,x], dim=1)
+            x = x.chunk(self.cell_info['groups'],dim=1)
+            out = [None]*self.cell_info['groups']
+            for j in range(self.cell_info['groups']):
+                out[j] = torch.cat([shortcut[j],x[j]],dim=1)
+            x = torch.cat(out,dim=1)
         return x
 
 class ShuffleGroupDenseCell(nn.Module):
@@ -444,15 +458,13 @@ class LSTMCell(nn.Module):
         
     def make_cell(self):
         cell_info = copy.deepcopy(self.cell_info)
-        _tuple = ntuple(2)
-        cell_info['activation'] = _tuple(cell_info['activation'])
         cell = nn.ModuleList([nn.ModuleDict({}) for _ in range(cell_info['num_layer'])])
         for i in range(cell_info['num_layer']):
-            cell_in_info = {**cell_info['in'][i],'output_size':4*cell_info['in'][i]['output_size']}
-            cell_hidden_info = {**cell_info['hidden'][i],'output_size':4*cell_info['hidden'][i]['output_size']}
+            cell_in_info = {'input_size':cell_info['input_size'],'output_size':4*cell_info['output_size'],'cell':'BasicCell','mode':cell_info['mode'],'normalization':'none','activation':'none'}
+            cell_hidden_info = {'input_size':cell_info['output_size'],'output_size':4*cell_info['output_size'],'cell':'BasicCell','mode':cell_info['mode'],'normalization':'none','activation':'none'}
             cell[i]['in'] = Cell(cell_in_info)
             cell[i]['hidden'] = Cell(cell_hidden_info)
-            cell[i]['activation'] = nn.ModuleList([Activation(cell_info['activation'][0]),Activation(cell_info['activation'][1])])
+            cell[i]['activation'] = Cell({'cell':'Activation','mode':cell_info['activation']})
         return cell
         
     def init_hidden(self, hidden_size):
@@ -473,24 +485,24 @@ class LSTMCell(nn.Module):
                 gates = self.cell[i]['in'](x[:,j])
                 if(hidden is None):
                     if(self.hidden is None):
-                        self.hidden = self.init_hidden((gates.size(0),self.cell_info['hidden'][i]['output_size'],*gates.size()[2:]))
+                        self.hidden = self.init_hidden((gates.size(0),self.cell_info['output_size'],*gates.size()[2:]))
                     else:
                         if(i==len(self.hidden[0])):
-                            tmp_hidden = self.init_hidden((gates.size(0),self.cell_info['hidden'][i]['output_size'],*gates.size()[2:]))
-                            self.hidden[0].extend(tmp_hidden[0])
-                            self.hidden[1].extend(tmp_hidden[1])
-                        else:
-                            pass
+                            new_hidden = self.init_hidden((gates.size(0),self.cell_info['output_size'],*gates.size()[2:]))
+                            self.hidden[0].extend(new_hidden[0])
+                            self.hidden[1].extend(new_hidden[1])
+                else:
+                    self.hidden = hidden
                 if(j==0):
                     hx[i],cx[i] = self.hidden[0][i],self.hidden[1][i]
                 gates += self.cell[i]['hidden'](hx[i])
                 ingate, forgetgate, cellgate, outgate = gates.chunk(4, 1)
                 ingate = torch.sigmoid(ingate)
                 forgetgate = torch.sigmoid(forgetgate)
-                cellgate = self.cell[i]['activation'][0](cellgate)
+                cellgate = self.cell[i]['activation'](cellgate)
                 outgate = torch.sigmoid(outgate)
                 cx[i] = (forgetgate * cx[i]) + (ingate * cellgate)
-                hx[i] = outgate * self.cell[i]['activation'][1](cx[i])                
+                hx[i] = outgate * self.cell[i]['activation'](cx[i])             
                 y[j] = hx[i]
             x = torch.stack(y,dim=1)
         self.hidden = [hx,cx]
@@ -506,18 +518,15 @@ class ResLSTMCell(nn.Module):
         
     def make_cell(self):
         cell_info = copy.deepcopy(self.cell_info)
-        _tuple = ntuple(2)
-        cell_info['activation'] = _tuple(cell_info['activation'])
         cell = nn.ModuleList([nn.ModuleDict({}) for _ in range(cell_info['num_layer'])])
+        cell_shortcut_info = {'cell':'none'}
+        cell[0]['shortcut'] = Cell(cell_shortcut_info)
         for i in range(cell_info['num_layer']):
-            if(i==0):
-                cell_shortcut_info = cell_info['shortcut'][i]
-                cell[i]['shortcut'] = Cell(cell_shortcut_info)
-            cell_in_info = {**cell_info['in'][i],'output_size':4*cell_info['in'][i]['output_size']}
-            cell_hidden_info = {**cell_info['hidden'][i],'output_size':4*cell_info['hidden'][i]['output_size']}
+            cell_in_info = {'input_size':cell_info['input_size'],'output_size':4*cell_info['output_size'],'cell':'BasicCell','mode':cell_info['mode'],'normalization':'none','activation':'none'}
+            cell_hidden_info = {'input_size':cell_info['output_size'],'output_size':4*cell_info['output_size'],'cell':'BasicCell','mode':cell_info['mode'],'normalization':'none','activation':'none'}
             cell[i]['in'] = Cell(cell_in_info)
             cell[i]['hidden'] = Cell(cell_hidden_info)            
-            cell[i]['activation'] = nn.ModuleList([Activation(cell_info['activation'][0]),Activation(cell_info['activation'][1])])         
+            cell[i]['activation'] = Cell({'cell':'Activation','mode':cell_info['activation']})    
         return cell
         
     def init_hidden(self, hidden_size):
@@ -541,14 +550,12 @@ class ResLSTMCell(nn.Module):
                 gates = self.cell[i]['in'](x[:,j])
                 if(hidden is None):
                     if(self.hidden is None):
-                        self.hidden = self.init_hidden((gates.size(0),self.cell_info['hidden'][i]['output_size'],*gates.size()[2:]))
+                        self.hidden = self.init_hidden((gates.size(0),self.cell_info['output_size'],*gates.size()[2:]))
                     else:
                         if(i==len(self.hidden[0])):
-                            tmp_hidden = self.init_hidden((gates.size(0),self.cell_info['hidden'][i]['output_size'],*gates.size()[2:]))
-                            self.hidden[0].extend(tmp_hidden[0])
-                            self.hidden[1].extend(tmp_hidden[1])
-                        else:
-                            pass
+                            new_hidden = self.init_hidden((gates.size(0),self.cell_info['output_size'],*gates.size()[2:]))
+                            self.hidden[0].extend(new_hidden[0])
+                            self.hidden[1].extend(new_hidden[1])
                 else:
                     self.hidden = hidden
                 if(j==0):
@@ -557,10 +564,10 @@ class ResLSTMCell(nn.Module):
                 ingate, forgetgate, cellgate, outgate = gates.chunk(4, 1)
                 ingate = torch.sigmoid(ingate)
                 forgetgate = torch.sigmoid(forgetgate)
-                cellgate = self.cell[i]['activation'][0](cellgate)
+                cellgate = self.cell[i]['activation'](cellgate)
                 outgate = torch.sigmoid(outgate)
                 cx[i] = (forgetgate * cx[i]) + (ingate * cellgate)  
-                hx[i] = outgate * self.cell[i]['activation'][1](cx[i]) if(i<len(self.cell)-1) else outgate*(shortcut[j] + self.cell[i]['activation'][1](cx[i]))
+                hx[i] = outgate * self.cell[i]['activation'](cx[i]) if(i<len(self.cell)-1) else outgate*(shortcut[j] + self.cell[i]['activation'](cx[i]))
                 y[j] = hx[i]
             x = torch.stack(y,dim=1)
         self.hidden = [hx,cx]
@@ -812,6 +819,22 @@ class FractalBasicCell(nn.Module):
             x = self.cell[i][-1]['activation'](x+shortcut)
         return x
 
+class QuantizationCell(nn.Module):
+    def __init__(self, cell_info):
+        super(QuantizationCell, self).__init__()
+        self.cell_info = cell_info
+        self.cell = self.make_cell()
+
+    def make_cell(self):
+        cell_info = copy.deepcopy(self.cell_info)
+        cell = Quantization(cell_info['num_center'],cell_info['sigma'])
+        return cell
+        
+    def forward(self, input):
+        x = input
+        x,symbol,distance = self.cell(x)
+        return x,symbol,distance
+        
 class Cell(nn.Module):
     def __init__(self, cell_info):
         super(Cell, self).__init__()
@@ -826,15 +849,15 @@ class Cell(nn.Module):
         elif(self.cell_info['cell'] == 'Activation'):
             cell = Activation(self.cell_info)
         elif(self.cell_info['cell'] == 'Conv2d'):
-            default_cell_info = {'kernel_size':3,'stride':1,'padding':1,'dilation':1,'groups':1,'bias':False,'normalization':'none','activation':'relu'}
+            default_cell_info = {'kernel_size':3,'stride':1,'padding':1,'dilation':1,'groups':1,'bias':False}
             self.cell_info = {**default_cell_info,**self.cell_info}
             cell = nn.Conv2d(self.cell_info['input_size'],self.cell_info['output_size'],self.cell_info['kernel_size'],\
-                self.cell_info['stride'],self.cell_info['padding'],self.cell_info['dilation'],self.cell_info['groups'],self.cell_info['bias'])
+                    self.cell_info['stride'],self.cell_info['padding'],self.cell_info['dilation'],self.cell_info['groups'],self.cell_info['bias'])           
         elif(self.cell_info['cell'] == 'ConvTranspose2d'):
-            default_cell_info = {'kernel_size':3,'stride':1,'padding':1,'output_padding':0,'dilation':1,'groups':1,'bias':False,'normalization':'none','activation':'relu'}
+            default_cell_info = {'kernel_size':3,'stride':1,'padding':1,'output_padding':0,'dilation':1,'groups':1,'bias':False}
             self.cell_info = {**default_cell_info,**self.cell_info}
             cell = nn.ConvTranspose2d(self.cell_info['input_size'],self.cell_info['output_size'],self.cell_info['kernel_size'],\
-                self.cell_info['stride'],self.cell_info['padding'],self.cell_info['output_padding'],self.cell_info['groups'],self.cell_info['bias'],self.cell_info['dilation'])
+                    self.cell_info['stride'],self.cell_info['padding'],self.cell_info['output_padding'],self.cell_info['groups'],self.cell_info['bias'],self.cell_info['dilation'])
         elif(self.cell_info['cell'] == 'oConv2d'):
             default_cell_info = {'kernel_size':3,'stride':1,'padding':1,'dilation':1,'groups':1,'bias':False}
             self.cell_info = {**default_cell_info,**self.cell_info}
@@ -899,6 +922,12 @@ class Cell(nn.Module):
             default_cell_info = {'mode':'pass','normalization':'none','activation':'relu','groups':1,'bias':False,'order':'after'}
             self.cell_info = {**default_cell_info,**self.cell_info}
             cell = FractalBasicCell(self.cell_info)
+        elif(self.cell_info['cell'] == 'QuantizationCell'):
+            cell = QuantizationCell(self.cell_info)
+        elif(self.cell_info['cell'] == 'RestrictedLSTMCell'):
+            default_cell_info = {'activation':'tanh'}
+            self.cell_info = {**default_cell_info,**self.cell_info}
+            cell = RestrictedLSTMCell(self.cell_info)
         else:
             raise ValueError('model mode not supported')
         return cell

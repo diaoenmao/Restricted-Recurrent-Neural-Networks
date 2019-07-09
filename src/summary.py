@@ -26,19 +26,17 @@ for k in config.PARAM:
         exec('config.PARAM[\'{0}\'] = {1}'.format(k,args[k]))
     
 def main():
-    model_TAG = '0_{}_{}'.format(config.PARAM['data_name']['train'],config.PARAM['model_name']) \
-        if(config.PARAM['special_TAG']=='') else '0_{}_{}_{}'.format(config.PARAM['data_name']['train'],config.PARAM['model_name'],config.PARAM['special_TAG'])
+    model_TAG = '{}_{}_{}'.format(config.PARAM['data_name']['train'],config.PARAM['model_name'],config.PARAM['control_name']) \
+        if(config.PARAM['special_TAG']=='') else '{}_{}_{}_{}'.format(config.PARAM['data_name']['train'],config.PARAM['model_name'],config.PARAM['control_name'],config.PARAM['special_TAG'])
     runExperiment(model_TAG)
     return
     
 def runExperiment(model_TAG):
-    dataset = {}
-    dataset['train'],_ = fetch_dataset(data_name=config.PARAM['data_name']['train'])
-    config.PARAM['classes_size'] = dataset['train'].classes_size
+    dataset = fetch_dataset(data_name=config.PARAM['data_name']['train'])
     data_loader = split_dataset(dataset,data_size=config.PARAM['data_size'],batch_size=config.PARAM['batch_size'])
     print(config.PARAM)
     
-    model = eval('models.{}(\'{}\').to(device)'.format(config.PARAM['model_name'],model_TAG))
+    model = eval('models.{}().to(device)'.format(config.PARAM['model_name']))
     summary = summarize(data_loader['train'],model)
     content = parse_summary(summary)
     print(content)
@@ -61,8 +59,10 @@ def summarize(train_loader, model):
                 summary['module'][key]['input_size'] = []
                 summary['module'][key]['output_size'] = []
                 summary['module'][key]['params'] = {}
-            summary['module'][key]['input_size'].append(list(input[0].size()))
-            summary['module'][key]['output_size'].append(list(output.size()))                
+            input_size = list(input[0].size())
+            output_size = list(output[0].size())
+            summary['module'][key]['input_size'].append(input_size)
+            summary['module'][key]['output_size'].append(output_size)                
             for name, param in module.named_parameters():
                 if(param.requires_grad):
                     if(name == 'weight'):                        
@@ -83,7 +83,10 @@ def summarize(train_loader, model):
             if('weight' in summary['module'][key]['params']):
                 weight_size = summary['module'][key]['params']['weight']['size']
                 if(isinstance(module,_ConvNd)):
-                    summary['module'][key]['coordinates'].append([torch.arange(weight_size[0],device=config.PARAM['device']),torch.arange(weight_size[1],device=config.PARAM['device'])])
+                    if(module.transposed):
+                        summary['module'][key]['coordinates'].append([torch.arange(weight_size[0],device=config.PARAM['device']),torch.arange(weight_size[1],device=config.PARAM['device'])])
+                    else:
+                        summary['module'][key]['coordinates'].append([torch.arange(weight_size[0],device=config.PARAM['device']),torch.arange(weight_size[1],device=config.PARAM['device'])])
                 elif(isinstance(module,_oConvNd)):
                     summary['module'][key]['coordinates'].append(input[1])
                 elif(isinstance(module,_BatchNorm)):
@@ -105,9 +108,9 @@ def summarize(train_loader, model):
                         raise ValueError('coordinates dimension not supported')
                 elif(name == 'bias'):
                     if(len(coordinates)==1):
-                        summary['module'][key]['params'][name]['mask'][coordinates[0]] += 1
-                    elif(len(coordinates)==2):
-                        summary['module'][key]['params'][name]['mask'][coordinates[0]] += 1
+                        summary['module'][key]['params'][name]['mask'] += 1
+                    elif(len(coordinates)==2):                       
+                        summary['module'][key]['params'][name]['mask'] += 1
                     else:
                         raise ValueError('coordinates dimension not supported')
                 else:
@@ -118,7 +121,7 @@ def summarize(train_loader, model):
             hooks.append(module.register_forward_hook(hook))
         return
     
-    run_mode = False
+    run_mode = True
     summary = OrderedDict()
     summary['module'] = OrderedDict()
     summary['count'] = OrderedDict()
@@ -172,7 +175,10 @@ def parse_summary(summary):
     
 def collate(input):
     for k in input:
-        input[k] = torch.stack(input[k],0)
+        if(k=='img'):
+            input[k] = torch.stack(input[k],0)
+        else:
+            input[k] = torch.stack(input[k],0)
     return input
     
 if __name__ == "__main__":

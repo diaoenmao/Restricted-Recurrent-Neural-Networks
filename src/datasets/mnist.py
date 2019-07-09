@@ -6,7 +6,7 @@ import torch
 from PIL import Image
 from torch.utils.data import Dataset
 from utils import makedir_exist_ok
-from .utils import download_url, make_branch_classes_to_labels
+from .utils import download_url
 
 class MNIST(Dataset):
     data_name = 'MNIST'
@@ -119,14 +119,13 @@ class EMNIST(MNIST):
     feature_dim = {'img':1}
     output_names = ['img','label']
         
-    def __init__(self, root, split, branch, **kwargs):
+    def __init__(self, root, split, **kwargs):
         if split not in self.splits:
             raise ValueError('Split "{}" not found. Valid splits are: {}'.format(split, ', '.join(self.splits)))
         self.training_file = self._training_file(split)
         self.test_file = self._test_file(split)
         super(EMNIST, self).__init__(root, **kwargs)
         self.split = split
-        self.branch = branch
         if(self.split == 'digits' or self.split == 'mnist'):
             self.classes = self.digits_classes
             self.classes_size = len(self.classes)
@@ -138,36 +137,17 @@ class EMNIST(MNIST):
         elif(self.split == 'balanced' or self.split == 'bymerge'):
             unmerged_classes = [c for c in self.lower_letters_classes if c not in self.merged_classes]
             self.classes = self.digits_classes + self.upper_letters_classes + unmerged_classes
-            if(branch):
-                self.branch_classes = {'digits':self.digits_classes,'letters':self.upper_letters_classes + unmerged_classes}
-                self.classes_to_labels, self.classes_to_branch_labels, self.classes_size, self.depth = make_branch_classes_to_labels(self.branch_classes)
-            else:
-                self.classes_size = len(self.classes)
-                self.classes_to_labels = {self.classes[i]:i for i in range(len(self.classes))}
+            self.classes_size = len(self.classes)
+            self.classes_to_labels = {self.classes[i]:i for i in range(len(self.classes))}
         elif(self.split == 'byclass'):
             self.classes = self.digits_classes + self.upper_letters_classes + self.lower_letters_classes
-            if(branch):
-                self.branch_classes = {'digits':self.digits_classes,'letters':{'upper':self.upper_letters_classes,'lower':self.lower_letters_classes}}
-                self.classes_to_labels, self.classes_to_branch_labels, self.classes_size, self.depth = make_branch_classes_to_labels(self.branch_classes)
-            else:
-                self.classes_size = len(self.classes)
-                self.classes_to_labels = {self.classes[i]:i for i in range(len(self.classes))}
+            self.classes_size = len(self.classes)
+            self.classes_to_labels = {self.classes[i]:i for i in range(len(self.classes))}
 
     def __getitem__(self, index):
-        if(self.branch):
-            img, label = self.img[index], self.label[index]
-            flat_label = self.classes_to_labels[self.classes[label]]
-            branch_label = self.classes_to_branch_labels[self.classes[label]]
-            flat_label = torch.tensor(flat_label)
-            branch_label = torch.tensor(branch_label)
-            pad = torch.tensor([-100] * (self.depth - branch_label.size(0)),dtype=torch.int64)
-            branch_label = torch.cat((branch_label,pad),0)
-            img = Image.fromarray(img.numpy().T, mode='L')
-            input = {'img': img, 'label': flat_label, 'branch_label': branch_label}
-        else:
-            img, label = self.img[index], torch.tensor(self.label[index])
-            img = Image.fromarray(img.numpy().T, mode='L')   
-            input = {'img': img, 'label': label}
+        img, label = self.img[index], torch.tensor(self.label[index])
+        img = Image.fromarray(img.numpy().T, mode='L')   
+        input = {'img': img, 'label': label}
         if self.transform is not None:
             input = self.transform(input)            
         return input

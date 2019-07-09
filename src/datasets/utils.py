@@ -70,79 +70,59 @@ def make_classes_counts(label,class_sizes):
         classes_counts[s] += 1
     return classes_counts
     
-def gen_bar_updater(pbar):
+def gen_bar_updater():
+    pbar = tqdm(total=None)
     def bar_update(count, block_size, total_size):
         if pbar.total is None and total_size:
             pbar.total = total_size
         progress_bytes = count * block_size
         pbar.update(progress_bytes - pbar.n)
-
     return bar_update
 
+def calculate_md5(fpath, chunk_size=1024 * 1024):
+    md5 = hashlib.md5()
+    with open(fpath, 'rb') as f:
+        for chunk in iter(lambda: f.read(chunk_size), b''):
+            md5.update(chunk)
+    return md5.hexdigest()
+
+def check_md5(fpath, md5, **kwargs):
+    return md5 == calculate_md5(fpath, **kwargs)
+
 def check_integrity(fpath, md5=None):
-    if md5 is None:
-        return True
     if not os.path.isfile(fpath):
         return False
-    md5o = hashlib.md5()
-    with open(fpath, 'rb') as f:
-        # read in 1MB chunks
-        for chunk in iter(lambda: f.read(1024 * 1024), b''):
-            md5o.update(chunk)
-    md5c = md5o.hexdigest()
-    if md5c != md5:
-        return False
-    return True
+    if md5 is None:
+        return True
+    return check_md5(fpath, md5)
 
-def download_url(url, root, filename, md5):
+def download_url(url, root, filename=None, md5=None):
     from six.moves import urllib
 
     root = os.path.expanduser(root)
+    if not filename:
+        filename = os.path.basename(url)
     fpath = os.path.join(root, filename)
 
     makedir_exist_ok(root)
-
-    # downloads file
-    if os.path.isfile(fpath) and check_integrity(fpath, md5):
+    if check_integrity(fpath, md5):
         print('Using downloaded and verified file: ' + fpath)
     else:
         try:
             print('Downloading ' + url + ' to ' + fpath)
             urllib.request.urlretrieve(
                 url, fpath,
-                reporthook=gen_bar_updater(tqdm(unit='B', unit_scale=True))
+                reporthook=gen_bar_updater()
             )
-        except OSError:
+        except urllib.error.URLError as e:
             if url[:5] == 'https':
                 url = url.replace('https:', 'http:')
                 print('Failed download. Trying https -> http instead.'
                       ' Downloading ' + url + ' to ' + fpath)
                 urllib.request.urlretrieve(
                     url, fpath,
-                    reporthook=gen_bar_updater(tqdm(unit='B', unit_scale=True))
+                    reporthook=gen_bar_updater()
                 )
-
-def make_branch_classes_to_labels(branch_classes,idx=0,branch_idx=[],depth=1):
-    classes_to_labels = {}
-    classes_to_branch_labels = {}
-    branch_size = []
-    branch_index = 0
-    for key in branch_classes:
-        if(isinstance(branch_classes[key],list)):
-            for i in range(len(branch_classes[key])):
-                classes_to_labels[branch_classes[key][i]] = idx
-                classes_to_branch_labels[branch_classes[key][i]] = branch_idx + [branch_index,i]
-                idx = idx + 1
-            branch_size.append(len(branch_classes[key]))
-        elif(isinstance(branch_classes[key],dict)):
-            sub_classes_to_labels, sub_classes_to_branch_labels, sub_branch_size, depth = make_branch_classes_to_labels(branch_classes[key],idx,[branch_index],depth)
-            classes_to_labels = {**classes_to_labels, **sub_classes_to_labels}
-            classes_to_branch_labels = {**classes_to_branch_labels, **sub_classes_to_branch_labels}
-            branch_size.append(sub_branch_size)
-            idx = max(sub_classes_to_labels.values())
-        else:
-            raise ValueError('Not supported type making branch classes to labels')
-        branch_index = branch_index + 1
-    depth = depth + 1
-    return classes_to_labels, classes_to_branch_labels, branch_size, depth  
+            else:
+                raise e
         

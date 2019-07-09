@@ -122,49 +122,12 @@ def dict_to_device(input,device):
         input = input.to(device)
     return input
     
-def pad_sequence(sequences, batch_first=False, padding_value=0):
-    trailing_dims = sequences[0].size()[1:]
-    max_len = max([s.size(0) for s in sequences])
-    if batch_first:
-        out_dims = (len(sequences), max_len) + trailing_dims
-    else:
-        out_dims = (max_len, len(sequences)) + trailing_dims
-    out_tensor = sequences[0].new(*out_dims).fill_(padding_value)
-    lengths = sequences[0].new_zeros(len(sequences),dtype=torch.long)
-    for i, tensor in enumerate(sequences):
-        lengths[i] = tensor.size(0)
-        if batch_first:
-            out_tensor[i, :lengths[i], ...] = tensor
-        else:
-            out_tensor[:lengths[i], i, ...] = tensor
-
-    return out_tensor, lengths
-    
 def ntuple(n):
     def parse(x):
         if isinstance(x, container_abcs.Iterable) and not isinstance(x, str):
             return x
         return tuple(repeat(x, n))
     return parse
-    
-def apply_along_dim(input, *other_input, fn, dim, m='flat', **other_kinput):
-    _tuple = _ntuple(2)
-    dim = _tuple(dim)
-    output = []
-    if(m=='list'):
-        for i, input_i in enumerate(torch.unbind(input, dim=dim[0])):
-            cur_other_input = [x[i] for x in other_input]
-            cur_other_kinput = {k:other_kinput[k][i] for k in other_kinput}
-            output.append(fn(input_i,*cur_other_input,**cur_other_kinput))
-    elif(m=='flat'):
-        for i, input_i in enumerate(torch.unbind(input, dim=dim[0])):
-            cur_other_input = other_input
-            cur_other_kinput = other_kinput
-            output.append(fn(input_i,*cur_other_input,**cur_other_kinput))  
-    else:
-        raise ValueError('Apply mode not supported')
-    output = torch.stack(output, dim=dim[1])
-    return output
 
 def apply_fn(module,fn):
     for n, m in module.named_children():
@@ -173,7 +136,7 @@ def apply_fn(module,fn):
         if(sum(1 for _ in m.named_children())!=0):
             exec('apply_fn(m,\'{0}\')'.format(fn))
     return
-
+    
 # ===================Function===================== 
 def p_inverse(A):
     pinv = (A.t().matmul(A)).inverse().matmul(A.t())
@@ -220,4 +183,20 @@ def gumbel_softrank(logits, tau=1, hard=False, sample=True, dim=-1):
     else:
         ret = y_soft
     return ret
+
+def normalize(input):
+    with torch.no_grad():
+        broadcast_size = [1]*input.dim()
+        broadcast_size[1] = input.size(1)
+        m,s = config.PARAM['stats']['img'].mean.view(broadcast_size).to(input.device),config.PARAM['stats']['img'].std.view(broadcast_size).to(input.device)
+        input = input.sub(m).div(s).detach()
+    return input   
+
+def denormalize(input):
+    with torch.no_grad():
+        broadcast_size = [1]*input.dim()
+        broadcast_size[1] = input.size(1)
+        m,s = config.PARAM['stats']['img'].mean.view(broadcast_size).to(input.device),config.PARAM['stats']['img'].std.view(broadcast_size).to(input.device)
+        input = input.mul(s).add(m).detach()
+    return input
     
