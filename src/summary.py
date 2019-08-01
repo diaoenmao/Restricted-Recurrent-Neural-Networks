@@ -12,7 +12,6 @@ from torch.nn.modules.batchnorm import _BatchNorm
 from torch.nn.modules.conv import _ConvNd
 from data import *
 from metrics import *
-from modules.organic import _oConvNd
 from utils import *
 
 
@@ -26,6 +25,7 @@ for k in config.PARAM:
         exec('config.PARAM[\'{0}\'] = {1}'.format(k,args[k]))
     
 def main():
+    process_control_name()
     model_TAG = '{}_{}_{}'.format(config.PARAM['data_name']['train'],config.PARAM['model_name'],config.PARAM['control_name']) \
         if(config.PARAM['special_TAG']=='') else '{}_{}_{}_{}'.format(config.PARAM['data_name']['train'],config.PARAM['model_name'],config.PARAM['control_name'],config.PARAM['special_TAG'])
     runExperiment(model_TAG)
@@ -87,8 +87,6 @@ def summarize(train_loader, model):
                         summary['module'][key]['coordinates'].append([torch.arange(weight_size[0],device=config.PARAM['device']),torch.arange(weight_size[1],device=config.PARAM['device'])])
                     else:
                         summary['module'][key]['coordinates'].append([torch.arange(weight_size[0],device=config.PARAM['device']),torch.arange(weight_size[1],device=config.PARAM['device'])])
-                elif(isinstance(module,_oConvNd)):
-                    summary['module'][key]['coordinates'].append(input[1])
                 elif(isinstance(module,_BatchNorm)):
                     summary['module'][key]['coordinates'].append([torch.arange(weight_size[0],device=config.PARAM['device'])])
                 elif(isinstance(module,nn.Linear)):
@@ -180,6 +178,16 @@ def collate(input):
         else:
             input[k] = torch.stack(input[k],0)
     return input
-    
+
+def process_control_name():
+    control_name = config.PARAM['control_name'].split('_')
+    config.PARAM['channel_mode'] = control_name[0]
+    config.PARAM['snr'] = float(control_name[1])
+    config.PARAM['k'] = int(control_name[2])
+    config.PARAM['R'] = int(control_name[3])
+    config.PARAM['num_layer'] = int(control_name[4])
+    config.PARAM['n'] = config.PARAM['k'] * config.PARAM['R']
+    return
+
 if __name__ == "__main__":
     main()

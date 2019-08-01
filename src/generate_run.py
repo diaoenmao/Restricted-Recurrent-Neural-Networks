@@ -1,25 +1,29 @@
 import config
+
 config.init()
 import itertools
 
+
 def main():
-    gpu_ids = ['0','1','2','3']
+    gpu_ids = ['0', '1', '2', '3']
     script_name = [['train_model.py']]
-    model_names = [['grouprescodec']]
+    model_names = [['smartcode_cnn', 'smartcode_rnn']]
     init_seeds = [[0]]
-    control_names = [['1'],['16'],['256'],['2'],['1','1e-1','1e-3','1e-5']]
+    control_names = [['awgn'], ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10'], ['100'], ['2', '3'],
+                     ['4', '8']]
     control_names = list(itertools.product(*control_names))
     control_names = [['_'.join(control_names[i]) for i in range(len(control_names))]]
     controls = script_name + model_names + init_seeds + control_names
     controls = list(itertools.product(*controls))
     s = '#!/bin/bash\n'
     for i in range(len(controls)):
-        s = s + 'CUDA_VISIBLE_DEVICES=\"{}\" python {} --model_name \\\'{}\\\' --init_seed {} --control_name \\\'{}\\\' &\n'.format(gpu_ids[i%len(gpu_ids)],*controls[i])        
+        s = s + 'CUDA_VISIBLE_DEVICES=\"{}\" python {} --model_name \\\'{}\\\' --init_seed {} --control_name \\\'{}\\\' &\n'.format(
+            gpu_ids[i % len(gpu_ids)], *controls[i])
     print(s)
     run_file = open("./run.sh", "w")
     run_file.write(s)
     run_file.close()
-    exit()
-    
+
+
 if __name__ == '__main__':
     main()

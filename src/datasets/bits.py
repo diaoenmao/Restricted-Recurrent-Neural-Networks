@@ -1,5 +1,4 @@
 import config
-config.init()
 import torch
 from torch.utils.data import Dataset
 
@@ -11,9 +10,9 @@ class BITS(Dataset):
         self.transform = transform
         self.train = train
         if(train):
-            self.bits, _ = fetch_dataset_bits(config.PARAM['block_size'])
+            self.bits, _ = fetch_dataset_bits(config.PARAM['k'])
         else:
-           _, self.bits = fetch_dataset_bits(config.PARAM['block_size'])
+           _, self.bits = fetch_dataset_bits(config.PARAM['k'])
         
     def __getitem__(self, index):
         bits = self.bits[index]      

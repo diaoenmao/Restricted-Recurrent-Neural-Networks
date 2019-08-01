@@ -199,4 +199,3 @@ def denormalize(input):
         m,s = config.PARAM['stats']['img'].mean.view(broadcast_size).to(input.device),config.PARAM['stats']['img'].std.view(broadcast_size).to(input.device)
         input = input.mul(s).add(m).detach()
     return input
-    

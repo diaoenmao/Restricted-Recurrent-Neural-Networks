@@ -6,7 +6,7 @@ import torch
 from PIL import Image
 from torch.utils.data import Dataset
 from utils import makedir_exist_ok
-from .utils import download_url, check_integrity
+from .utils import download_url, check_integrity, make_branch_classes_to_labels
 
 class CIFAR10(Dataset):
     data_name = 'CIFAR10'
@@ -183,15 +183,31 @@ class CIFAR100(CIFAR10):
     feature_dim = {'img':1}
     output_names = ['img','label']
     
-    def __init__(self, root, **kwargs):
-        super(CIFAR100, self).__init__(root, **kwargs)                      
-        self.classes_size = 100 
-        self.classes_to_labels = {self.classes[i]:i for i in range(len(self.classes))}
+    def __init__(self, root, branch, **kwargs):
+        super(CIFAR100, self).__init__(root, **kwargs)
+        self.branch = branch                         
+        if(branch):
+            self.branch_classes = branch_classes
+            self.classes_to_labels, self.classes_to_branch_labels, self.classes_size, self.depth = make_branch_classes_to_labels(self.branch_classes)
+        else:
+            self.classes_size = 100 
+            self.classes_to_labels = {self.classes[i]:i for i in range(len(self.classes))}
             
     def __getitem__(self, index):
-        img, label = self.img[index], torch.tensor(self.label[index])
-        img = Image.fromarray(img)
-        input = {'img': img, 'label': label}            
+        if(self.branch):
+            img, label = self.img[index], self.label[index]
+            flat_label = self.classes_to_labels[self.classes[label]]
+            branch_label = self.classes_to_branch_labels[self.classes[label]]
+            flat_label = torch.tensor(flat_label)
+            branch_label = torch.tensor(branch_label)
+            pad = torch.tensor([-100] * (self.depth - branch_label.size(0)),dtype=torch.int64)
+            branch_label = torch.cat((branch_label,pad),0)
+            img = Image.fromarray(img)
+            input = {'img': img, 'label': flat_label, 'branch_label': branch_label}
+        else:
+            img, label = self.img[index], torch.tensor(self.label[index])
+            img = Image.fromarray(img)
+            input = {'img': img, 'label': label}            
         if self.transform is not None:
             input = self.transform(input)            
         return input

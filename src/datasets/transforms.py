@@ -80,6 +80,7 @@ class Resize(object):
         return self.__class__.__name__ + '(shape={0}, interpolation={1})'.format(self.shape, interpolate_str)
         
 class RandomHorizontalFlip(object):
+
     def __init__(self, p=0.5):
         self.p = p
         
@@ -115,7 +116,9 @@ class RandomCrop(object):
     def __repr__(self):
         return self.__class__.__name__ + '(size={0}, padding={1})'.format(self.size, self.padding)
         
+        
 class RandomVerticalFlip(object):
+
     def __init__(self, p=0.5):
         self.p = p
         
@@ -131,8 +134,10 @@ class RandomVerticalFlip(object):
 
     def __repr__(self):
         return self.__class__.__name__ + '(p={})'.format(self.p)
-     
+        
+        
 class FractionResize(object):
+        
     def __init__(self, max_shape, interpolation=Image.BILINEAR):
         assert isinstance(max_shape, int) or (isinstance(max_shape, Iterable) and len(max_shape) == 2)
         self.max_shape = max_shape
@@ -154,18 +159,4 @@ class FractionResize(object):
     def __repr__(self):
         interpolate_str = _pil_interpolation_to_str[self.interpolation]
         return self.__class__.__name__ + '(max_shape={0}, interpolation={1})'.format(self.max_shape, interpolate_str)
-
-class ExtractPatch(object):
-    def __init__(self, size, step):
-        if isinstance(size, numbers.Number):
-            self.size = (int(size), int(size))
-        else:
-            self.size = size
-        self.step = step
-
-    def __call__(self, input):
-        input['img'] = F.extract_patches_2d(input['img'].unsqueeze(0),self.size,self.step).squeeze(0)
-        return input
         
-    def __repr__(self):
-        return self.__class__.__name__ + '(size={0}, step={1})'.format(self.size, self.step)

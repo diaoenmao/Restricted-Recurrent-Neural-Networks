@@ -3,7 +3,7 @@ import sys
 import torch
 from torch.utils.data import Dataset
 from utils import list_dir
-from .utils import default_loader, make_img_dataset
+from .utils import default_loader, make_img_dataset, make_classes_counts
 
 IMG_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.ppm', '.bmp', '.pgm', '.tif']
        
@@ -12,12 +12,12 @@ class DatasetFolder(Dataset):
         self.root = root
         self.loader = loader
         self.extensions = extensions 
-        self.feature_dim = {'img':1}
-
-        if(list_dir(self.root) != []):
+        dirs = list_dir(self.root)
+        if(dirs != []):
             self.classes, self.classes_to_labels = self._find_classes(self.root)
             self.classes_size = len(self.classes_to_labels.keys())
             self.output_names = ['img','label']
+            self.classes_counts = make_classes_counts(self.data['label'],self.classes_size)
         else:
             self.classes_to_labels = None
             self.classes_size = 0
