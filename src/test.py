@@ -8,6 +8,7 @@ import torch
 import torch.backends.cudnn as cudnn
 import torch.optim as optim
 import torch.nn as nn
+import math
 import models
 from torch.optim.lr_scheduler import MultiStepLR, ReduceLROnPlateau
 from data import *
@@ -248,9 +249,22 @@ def collate(input):
         # exit()
 
 
+def make_indices(num_channels,groups,sharing_rates,weight_size):
+    shared_size = round(num_channels/groups * sharing_rates)
+    nonshared_size = weight_size - shared_size
+    print(shared_size)
+    print(nonshared_size)
+    shared_indices = torch.arange(shared_size).expand(groups,shared_size)
+    print(weight_size)
+    print(shared_indices)
+    nonshared_indices = torch.arange(shared_size,shared_size+nonshared_size).view(groups,-1)
+    print(nonshared_indices)
+    indices = torch.cat([shared_indices,nonshared_indices],dim=1).view(-1)
+    return indices
+
 if __name__ == "__main__":
-    from modules.organic import _oConvNd
-    in_channels = 100
+    from modules.organic import _oConvNd,oConv2d
+    in_channels = 20
     out_channels = 100
     kernel_size = (3,3)
     stride = 1
@@ -258,8 +272,12 @@ if __name__ == "__main__":
     dilation = 1
     transposed = False
     output_padding = 0
-    groups = 1
-    sharing_rate = 0
+    groups = 2
+    sharing_rates = 0.3
     bias = True
     padding_mode = 'zeros'
-    o = _oConvNd(in_channels, out_channels, kernel_size, stride, padding, dilation, transposed, output_padding, groups, sharing_rate, bias, padding_mode)
+    weight_size = in_channels -(groups-1)*round(in_channels/groups * sharing_rates)
+    # indices = make_indices(in_channels,groups,sharing_rates,weight_size)
+    # print(indices)
+    # o = _oConvNd(in_channels, out_channels, kernel_size, stride, padding, dilation, transposed, output_padding, groups, sharing_rates, bias)
+    o = oConv2d(in_channels, out_channels, kernel_size, stride, padding, dilation, groups, sharing_rates, bias)
