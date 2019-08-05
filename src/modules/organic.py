@@ -1,3 +1,4 @@
+import config
 import torch
 import torch.nn as nn
 import math
@@ -7,39 +8,44 @@ from torch.nn.modules.conv import _ConvNd
 from utils import ntuple
 
 
-def make_indices(num_channels, groups, sharing_rates, weight_size):
-    shared_size = round(num_channels / groups * sharing_rates)
-    nonshared_size = weight_size - shared_size
-    shared_indices = torch.arange(shared_size).expand(groups, shared_size)
-    nonshared_indices = torch.arange(shared_size, shared_size + nonshared_size).view(groups, -1)
-    indices = torch.cat([shared_indices, nonshared_indices], dim=1).view(-1)
-    print(indices)
-    return indices
+def make_organic(in_channels, out_channels, sharing_rates):
+    shared_size = (out_channels.float() * sharing_rates).round().long()
+    nonshared_size = out_channels - shared_size
+    input_size = in_channels.max().item()
+    output_size = (shared_size.max() + nonshared_size.sum()).item()
+    input_indices = [torch.arange(in_channels[i]).to(config.PARAM['device']) for i in range(len(in_channels))]
+    output_indices = [[] for _ in range(out_channels.size(0))]
+    pivot = shared_size.max()
+    for i in range(out_channels.size(0)):
+        for j in range(out_channels.size(1)):
+            shared_indices = torch.arange(shared_size[i][j])
+            nonshared_indices = torch.arange(pivot, pivot + nonshared_size[i][j])
+            pivot += nonshared_size[i][j]
+            output_indices[i].append(torch.cat([shared_indices, nonshared_indices]).to(config.PARAM['device']))
+        output_indices[i] = torch.cat(output_indices[i])
+    return input_size, input_indices, output_size, output_indices
 
 
 class _oConvNd(nn.Module):
-
     def __init__(self, in_channels, out_channels, kernel_size, stride, padding, dilation, transposed, output_padding,
-                 groups, sharing_rates, bias):
+                 sharing_rates, bias):
         super(_oConvNd, self).__init__()
-        _nutple = ntuple(2)
-        self.in_channels = in_channels
-        self.out_channels = out_channels
+        self.register_buffer('in_channels', torch.tensor(in_channels))
+        self.register_buffer('out_channels', torch.tensor(out_channels))
         self.kernel_size = kernel_size
         self.stride = stride
         self.padding = padding
         self.dilation = dilation
         self.transposed = transposed
         self.output_padding = output_padding
-        groups, sharing_rates = _nutple(groups), _nutple(sharing_rates)
-        self.groups = _nutple(groups)
-        self.sharing_rates = _nutple(sharing_rates)
-        self.input_size = self.in_channels - (self.groups[0] - 1) * round(
-            self.in_channels / self.groups[0] * self.sharing_rates[0])
-        self.output_size = self.out_channels - (self.groups[1] - 1) * round(
-            self.in_channels / self.groups[1] * self.sharing_rates[1])
-        self.indices = (make_indices(self.in_channels, self.groups[0], self.sharing_rates[0], self.input_size),
-                        make_indices(self.out_channels, self.groups[1], self.sharing_rates[1], self.output_size))
+        self.register_buffer('sharing_rates', torch.tensor(sharing_rates, dtype=torch.float32))
+        self.input_size, self.input_indices, self.output_size, self.output_indices = make_organic(self.in_channels,
+                                                                                                  self.out_channels,
+                                                                                                  self.sharing_rates)
+        print(self.input_size)
+        print(self.output_size)
+        print(self.input_indices)
+        print(self.output_indices)
         if transposed:
             self.weight = nn.Parameter(torch.Tensor(self.input_size, self.output_size, *kernel_size))
         else:
@@ -66,26 +72,28 @@ class _oConvNd(nn.Module):
             s += ', dilation={dilation}'
         if self.output_padding != (0,) * len(self.output_padding):
             s += ', output_padding={output_padding}'
-        if self.groups != (1, 1):
-            s += ', groups={groups}'
-        if self.sharing_rates != (0, 0):
-            s += ', sharing_rates={sharing_rates}'
         if self.bias is None:
             s += ', bias=False'
         return s.format(**self.__dict__)
 
 
 class oConv2d(_oConvNd):
-    def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1,
-                 sharing_rates=0, bias=True):
+    def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, sharing_rates=0,
+                 bias=True):
         _nutple = ntuple(2)
         kernel_size = _nutple(kernel_size)
         stride = _nutple(stride)
         padding = _nutple(padding)
         dilation = _nutple(dilation)
         super(oConv2d, self).__init__(in_channels, out_channels, kernel_size, stride, padding, dilation, False,
-                                      _nutple(0), groups, sharing_rates, bias)
+                                      _nutple(0), sharing_rates, bias)
 
     def forward(self, input):
-        weight = self.weight.index_select(0, self.indices[1]).index_select(1, self.indices[0])
-        return F.conv2d(input, weight, self.bias, self.stride, self.padding, self.dilation, 1)
+        input = input.split(self.in_channels.tolist(), dim=1)
+        output = []
+        for i in range(len(input)):
+            weight = self.weight.index_select(1, self.input_indices[i]).index_select(0, self.output_indices[i])
+            bias = self.bias.index_select(0, self.output_indices[i]) if self.bias is not None else None
+            output.append(F.conv2d(input[i], weight, bias, self.stride, self.padding, self.dilation, 1))
+        output = torch.cat(output, dim=1)
+        return output

@@ -2,6 +2,8 @@ import config
 import copy
 import torch
 import torch.nn as nn
+from modules.organic import oConv2d
+from utils import ntuple
 
 device = config.PARAM['device']
 
@@ -10,9 +12,9 @@ def Normalization(cell_info):
     if (cell_info['mode'] == 'none'):
         return nn.Sequential()
     elif (cell_info['mode'] == 'bn'):
-        return nn.BatchNorm1d(cell_info['input_size'])
+        return nn.BatchNorm2d(cell_info['input_size'])
     elif (cell_info['mode'] == 'in'):
-        return nn.InstanceNorm1d(cell_info['input_size'])
+        return nn.InstanceNorm2d(cell_info['input_size'])
     else:
         raise ValueError('Normalization mode not supported')
     return
@@ -53,14 +55,20 @@ class BasicCell(nn.Module):
     def make_cell(self):
         cell_info = copy.deepcopy(self.cell_info)
         cell = nn.ModuleDict({})
-        if (cell_info['mode'] == 'Conv1d'):
-            cell_in_info = {'cell': 'Conv1d', 'input_size': cell_info['input_size'],
+        if (cell_info['mode'] == 'Conv2d'):
+            cell_in_info = {'cell': 'Conv2d', 'input_size': cell_info['input_size'],
                             'output_size': cell_info['output_size'],
                             'kernel_size': cell_info['kernel_size'], 'stride': cell_info['stride'],
                             'padding': cell_info['padding'], 'dilation': cell_info['dilation'],
                             'groups': cell_info['groups'], 'bias': cell_info['bias']}
-        elif (cell_info['mode'] == 'ConvTranspose1d'):
-            cell_in_info = {'cell': 'ConvTranspose1d', 'input_size': cell_info['input_size'],
+        elif (cell_info['mode'] == 'oConv2d'):
+            cell_in_info = {'cell': 'oConv2d', 'input_size': cell_info['input_size'],
+                            'output_size': cell_info['output_size'],
+                            'kernel_size': cell_info['kernel_size'], 'stride': cell_info['stride'],
+                            'padding': cell_info['padding'], 'dilation': cell_info['dilation'],
+                            'sharing_rates': cell_info['sharing_rates'], 'bias': cell_info['bias']}
+        elif (cell_info['mode'] == 'ConvTranspose2d'):
+            cell_in_info = {'cell': 'ConvTranspose2d', 'input_size': cell_info['input_size'],
                             'output_size': cell_info['output_size'],
                             'kernel_size': cell_info['kernel_size'], 'stride': cell_info['stride'],
                             'padding': cell_info['padding'], 'output_padding': cell_info['output_padding'],
@@ -79,80 +87,34 @@ class BasicCell(nn.Module):
         return x
 
 
-class ResBasicCell(nn.Module):
+class RLSTMCell(nn.Module):
     def __init__(self, cell_info):
-        super(ResBasicCell, self).__init__()
+        super(RLSTMCell, self).__init__()
         self.cell_info = cell_info
         self.cell = self.make_cell()
+        self.hidden = None
 
     def make_cell(self):
         cell_info = copy.deepcopy(self.cell_info)
         cell = nn.ModuleList([nn.ModuleDict({}) for _ in range(cell_info['num_layers'])])
+        _ntuple = ntuple(cell_info['num_layers'])
+        cell_info['sharing_rates'] = _ntuple(cell_info['sharing_rates'])
         for i in range(cell_info['num_layers']):
-            if (cell_info['mode'] == 'down'):
-                cell_shortcut_info = {'input_size': cell_info['input_size'], 'output_size': cell_info['output_size'],
-                                      'cell': 'BasicCell', 'mode': 'fc_down',
-                                      'normalization': cell_info['normalization'], 'activation': 'none'}
-            elif (cell_info['input_size'] != cell_info['output_size']):
-                cell_shortcut_info = {'input_size': cell_info['input_size'], 'output_size': cell_info['output_size'],
-                                      'cell': 'BasicCell', 'mode': 'fc',
-                                      'normalization': cell_info['normalization'], 'activation': 'none'}
-            else:
-                cell_shortcut_info = {'cell': 'none'}
-            cell_in_info = {'input_size': cell_info['input_size'], 'output_size': cell_info['output_size'],
-                            'cell': 'BasicCell', 'mode': cell_info['mode'],
-                            'normalization': cell_info['normalization'], 'activation': cell_info['activation']}
-            cell_out_info = {'input_size': cell_info['output_size'], 'output_size': cell_info['output_size'],
-                             'cell': 'BasicCell', 'mode': 'pass',
-                             'normalization': cell_info['normalization'], 'activation': 'none'}
-            cell[i]['shortcut'] = Cell(cell_shortcut_info)
+            cell_in_info = {'cell': 'oConv2d', 'input_size': (cell_info['input_size'], cell_info['output_size']),
+                            'output_size': ((cell_info['output_size'],) * 4,(cell_info['output_size'],) * 4),
+                            'kernel_size': cell_info['kernel_size'], 'stride': cell_info['stride'],
+                            'padding': cell_info['padding'], 'sharing_rates': cell_info['sharing_rates'][i],
+                            'bias': cell_info['bias'], 'normalization': 'none', 'activation': 'none'}
             cell[i]['in'] = Cell(cell_in_info)
-            cell[i]['out'] = Cell(cell_out_info)
-            cell[i]['activation'] = Cell({'cell': 'Activation', 'mode': cell_info['activation']})
+            cell[i]['activation'] = nn.ModuleList(
+                [Activation({'cell': 'Activation', 'mode': self.cell_info['activation']}),
+                 Activation({'cell': 'Activation', 'mode': self.cell_info['activation']})])
             cell_info['input_size'] = cell_info['output_size']
-            cell_info['mode'] = 'pass'
-        return cell
-
-    def forward(self, input):
-        x = input
-        for i in range(len(self.cell)):
-            shortcut = self.cell[i]['shortcut'](x)
-            x = self.cell[i]['in'](x)
-            x = self.cell[i]['out'](x)
-            x = self.cell[i]['activation'](x + shortcut)
-        return x
-
-
-class LSTMCell(nn.Module):
-    def __init__(self, cell_info):
-        super(LSTMCell, self).__init__()
-        self.cell_info = cell_info
-        self.cell = self.make_cell()
-        self.hidden = None
-
-    def make_cell(self):
-        cell_info = copy.deepcopy(self.cell_info)
-        cell = nn.ModuleList([nn.ModuleDict({}) for _ in range(cell_info['num_layers'])])
-        for i in range(cell_info['num_layers']):
-            cell_in_info = {'cell': 'Conv1d', 'input_size': cell_info['input_size'],
-                            'output_size': 4 * cell_info['output_size'],
-                            'kernel_size': cell_info['kernel_size'], 'stride': cell_info['stride'],
-                            'padding': cell_info['padding'], 'bias': cell_info['bias'], 'normalization': 'none',
-                            'activation': 'none'}
-            cell_hidden_info = {'cell': 'Conv1d', 'input_size': cell_info['output_size'],
-                                'output_size': 4 * cell_info['output_size'],
-                                'kernel_size': cell_info['kernel_size'], 'stride': cell_info['stride'],
-                                'padding': cell_info['padding'], 'bias': cell_info['bias'], 'normalization': 'none',
-                                'activation': 'none'}
-            cell[i]['in'] = Cell(cell_in_info)
-            cell[i]['hidden'] = Cell(cell_hidden_info)
-            cell[i]['activation'] = nn.ModuleList(
-                [Activation({'cell': 'Activation', 'mode': self.cell_info['activation']}),
-                 Activation({'cell': 'Activation', 'mode': self.cell_info['activation']})])
         return cell
 
     def init_hidden(self, hidden_size):
-        hidden = [[torch.zeros(hidden_size, device=device)], [torch.zeros(hidden_size, device=device)]]
+        hidden = [[torch.zeros(hidden_size, device=device) for _ in range(len(self.cell))],
+                  [torch.zeros(hidden_size, device=device) for _ in range(len(self.cell))]]
         return hidden
 
     def free_hidden(self):
@@ -161,135 +123,25 @@ class LSTMCell(nn.Module):
 
     def forward(self, input, hidden=None):
         x = input
-        hx, cx = [None for _ in range(len(self.cell))], [None for _ in range(len(self.cell))]
+        if (hidden is None):
+            self.hidden = self.init_hidden(
+                (x.size(0), self.cell_info['output_size'], *x.size()[3:])) if self.hidden is None else self.hidden
+        else:
+            self.hidden = hidden
         for i in range(len(self.cell)):
-            y = [None for _ in range(x.size(1))]
+            y = []
             for j in range(x.size(1)):
-                gates = self.cell[i]['in'](x[:, j])
-                if (hidden is None):
-                    if (self.hidden is None):
-                        self.hidden = self.init_hidden(
-                            (gates.size(0), self.cell_info['output_size'], *gates.size()[2:]))
-                    else:
-                        if (i == len(self.hidden[0])):
-                            new_hidden = self.init_hidden(
-                                (gates.size(0), self.cell_info['output_size'], *gates.size()[2:]))
-                            self.hidden[0].extend(new_hidden[0])
-                            self.hidden[1].extend(new_hidden[1])
-                        else:
-                            pass
-                if (j == 0):
-                    hx[i], cx[i] = self.hidden[0][i], self.hidden[1][i]
-                gates += self.cell[i]['hidden'](hx[i])
-                ingate, forgetgate, cellgate, outgate = gates.chunk(4, 1)
+                xhx = torch.cat([x[:, j], self.hidden[0][i]], dim=1)
+                gates = self.cell[i]['in'](xhx).chunk(2, 1)
+                ingate, forgetgate, cellgate, outgate = (gates[0] + gates[1]).chunk(4, 1)
                 ingate = torch.sigmoid(ingate)
                 forgetgate = torch.sigmoid(forgetgate)
                 cellgate = self.cell[i]['activation'][0](cellgate)
                 outgate = torch.sigmoid(outgate)
-                cx[i] = (forgetgate * cx[i]) + (ingate * cellgate)
-                hx[i] = outgate * self.cell[i]['activation'][1](cx[i])
-                y[j] = hx[i]
+                self.hidden[1][i] = (forgetgate * self.hidden[1][i]) + (ingate * cellgate)
+                self.hidden[0][i] = outgate * self.cell[i]['activation'][1](self.hidden[1][i])
+                y.append(self.hidden[0][i])
             x = torch.stack(y, dim=1)
-        self.hidden = [hx, cx]
-        return x
-
-
-class ResLSTMCell(nn.Module):
-    def __init__(self, cell_info):
-        super(ResLSTMCell, self).__init__()
-        self.cell_info = cell_info
-        self.cell = self.make_cell()
-        self.hidden = None
-
-    def make_cell(self):
-        cell_info = copy.deepcopy(self.cell_info)
-        cell = nn.ModuleList([nn.ModuleDict({}) for _ in range(cell_info['num_layers'])])
-        cell_shortcut_info = {'cell': 'none'} if (cell_info['input_size'] == cell_info['output_size']) else \
-            {'cell': 'Conv1d', 'input_size': cell_info['output_size'], 'output_size': cell_info['output_size'],
-             'kernel_size': 1, 'stride': 1, 'padding': 0, 'bias': cell_info['bias'], 'normalization': 'none',
-             'activation': 'none'}
-        cell[0]['shortcut'] = Cell(cell_shortcut_info)
-        for i in range(cell_info['num_layers']):
-            cell_in_info = {'cell': 'Conv1d', 'input_size': cell_info['input_size'],
-                            'output_size': 4 * cell_info['output_size'],
-                            'kernel_size': cell_info['kernel_size'], 'stride': cell_info['stride'],
-                            'padding': cell_info['padding'], 'bias': cell_info['bias'], 'normalization': 'none',
-                            'activation': 'none'}
-            cell_hidden_info = {'cell': 'Conv1d', 'input_size': cell_info['output_size'],
-                                'output_size': 4 * cell_info['output_size'],
-                                'kernel_size': cell_info['kernel_size'], 'stride': cell_info['stride'],
-                                'padding': cell_info['padding'], 'bias': cell_info['bias'], 'normalization': 'none',
-                                'activation': 'none'}
-            cell[i]['in'] = Cell(cell_in_info)
-            cell[i]['hidden'] = Cell(cell_hidden_info)
-            cell[i]['activation'] = nn.ModuleList(
-                [Activation({'cell': 'Activation', 'mode': self.cell_info['activation']}),
-                 Activation({'cell': 'Activation', 'mode': self.cell_info['activation']})])
-        return cell
-
-    def init_hidden(self, hidden_size):
-        hidden = [[torch.zeros(hidden_size, device=device)], [torch.zeros(hidden_size, device=device)]]
-        return hidden
-
-    def free_hidden(self):
-        self.hidden = None
-        return
-
-    def forward(self, input, hidden=None):
-        x = input
-        hx, cx = [None for _ in range(len(self.cell))], [None for _ in range(len(self.cell))]
-        shortcut = [None for _ in range(x.size(1))]
-        for i in range(len(self.cell)):
-            y = [None for _ in range(x.size(1))]
-            for j in range(x.size(1)):
-                if (i == 0):
-                    shortcut[j] = self.cell[i]['shortcut'](x[:, j])
-                gates = self.cell[i]['in'](x[:, j])
-                if (hidden is None):
-                    if (self.hidden is None):
-                        self.hidden = self.init_hidden(
-                            (gates.size(0), self.cell_info['hidden'][i]['output_size'], *gates.size()[2:]))
-                    else:
-                        if (i == len(self.hidden[0])):
-                            new_hidden = self.init_hidden(
-                                (gates.size(0), self.cell_info['hidden'][i]['output_size'], *gates.size()[2:]))
-                            self.hidden[0].extend(new_hidden[0])
-                            self.hidden[1].extend(new_hidden[1])
-                        else:
-                            pass
-                else:
-                    self.hidden = hidden
-                if (j == 0):
-                    hx[i], cx[i] = self.hidden[0][i], self.hidden[1][i]
-                gates += self.cell[i]['hidden'](hx[i])
-                ingate, forgetgate, cellgate, outgate = gates.chunk(4, 1)
-                ingate = torch.sigmoid(ingate)
-                forgetgate = torch.sigmoid(forgetgate)
-                cellgate = self.cell[i]['activation'][0](cellgate)
-                outgate = torch.sigmoid(outgate)
-                cx[i] = (forgetgate * cx[i]) + (ingate * cellgate)
-                hx[i] = outgate * self.cell[i]['activation'][1](cx[i]) if (i < len(self.cell) - 1) else outgate * (
-                            shortcut[j] + self.cell[i]['activation'][1](cx[i]))
-                y[j] = hx[i]
-            x = torch.stack(y, dim=1)
-        self.hidden = [hx, cx]
-        return x
-
-
-class ChannelCell(nn.Module):
-    def __init__(self, cell_info):
-        super(ChannelCell, self).__init__()
-        self.cell_info = cell_info
-        self.cell = self.make_cell()
-
-    def make_cell(self):
-        cell_info = copy.deepcopy(self.cell_info)
-        cell = Channel(cell_info['mode'], cell_info['snr'])
-        return cell
-
-    def forward(self, input):
-        x = input
-        x = self.cell(x)
         return x
 
 
@@ -306,38 +158,38 @@ class Cell(nn.Module):
             cell = Normalization(self.cell_info)
         elif (self.cell_info['cell'] == 'Activation'):
             cell = Activation(self.cell_info)
-        elif (self.cell_info['cell'] == 'Conv1d'):
+        elif (self.cell_info['cell'] == 'Conv2d'):
             default_cell_info = {'kernel_size': 3, 'stride': 1, 'padding': 1, 'dilation': 1, 'groups': 1, 'bias': False}
             self.cell_info = {**default_cell_info, **self.cell_info}
-            cell = nn.Conv1d(self.cell_info['input_size'], self.cell_info['output_size'], self.cell_info['kernel_size'],
+            cell = nn.Conv2d(self.cell_info['input_size'], self.cell_info['output_size'], self.cell_info['kernel_size'],
                              self.cell_info['stride'], self.cell_info['padding'], self.cell_info['dilation'],
                              self.cell_info['groups'], self.cell_info['bias'])
-        elif (self.cell_info['cell'] == 'ConvTranspose1d'):
+        elif (self.cell_info['cell'] == 'oConv2d'):
+            default_cell_info = {'kernel_size': 3, 'stride': 1, 'padding': 1, 'dilation': 1, 'in_sharing_rates': 0,
+                                 'out_sharing_rates': 0, 'bias': False}
+            self.cell_info = {**default_cell_info, **self.cell_info}
+            cell = oConv2d(self.cell_info['input_size'], self.cell_info['output_size'],
+                           self.cell_info['kernel_size'],
+                           self.cell_info['stride'], self.cell_info['padding'], self.cell_info['dilation'],
+                           self.cell_info['sharing_rates'], self.cell_info['bias'])
+        elif (self.cell_info['cell'] == 'ConvTranspose2d'):
             default_cell_info = {'kernel_size': 3, 'stride': 1, 'padding': 1, 'output_padding': 0, 'dilation': 1,
                                  'groups': 1, 'bias': False}
             self.cell_info = {**default_cell_info, **self.cell_info}
-            cell = nn.ConvTranspose1d(self.cell_info['input_size'], self.cell_info['output_size'],
+            cell = nn.ConvTranspose2d(self.cell_info['input_size'], self.cell_info['output_size'],
                                       self.cell_info['kernel_size'],
                                       self.cell_info['stride'], self.cell_info['padding'],
                                       self.cell_info['output_padding'], self.cell_info['groups'],
                                       self.cell_info['bias'], self.cell_info['dilation'])
         elif (self.cell_info['cell'] == 'BasicCell'):
-            default_cell_info = {'mode': 'Conv1d', 'kernel_size': 3, 'stride': 1, 'padding': 1, 'output_padding': 0,
+            default_cell_info = {'mode': 'Conv2d', 'kernel_size': 3, 'stride': 1, 'padding': 1, 'output_padding': 0,
                                  'dilation': 1, 'groups': 1, 'bias': False, 'normalization': 'bn', 'activation': 'relu'}
             self.cell_info = {**default_cell_info, **self.cell_info}
             cell = BasicCell(self.cell_info)
-        elif (self.cell_info['cell'] == 'ResBasicCell'):
-            cell = ResBasicCell(self.cell_info)
-        elif (self.cell_info['cell'] == 'LSTMCell'):
+        elif (self.cell_info['cell'] == 'RLSTMCell'):
             default_cell_info = {'activation': 'tanh'}
             self.cell_info = {**default_cell_info, **self.cell_info}
-            cell = LSTMCell(self.cell_info)
-        elif (self.cell_info['cell'] == 'ResLSTMCell'):
-            default_cell_info = {'activation': 'tanh'}
-            self.cell_info = {**default_cell_info, **self.cell_info}
-            cell = ResLSTMCell(self.cell_info)
-        elif (self.cell_info['cell'] == 'ChannelCell'):
-            cell = ChannelCell(self.cell_info)
+            cell = RLSTMCell(self.cell_info)
         else:
             raise ValueError('{} model mode not supported'.format(self.cell_info['cell']))
         return cell
