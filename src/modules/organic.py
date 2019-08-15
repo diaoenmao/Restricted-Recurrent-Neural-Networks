@@ -3,8 +3,6 @@ import torch
 import torch.nn as nn
 import math
 import torch.nn.functional as F
-import numpy as np
-from torch.nn.modules.conv import _ConvNd
 from utils import ntuple
 
 
@@ -40,12 +38,7 @@ class _oConvNd(nn.Module):
         self.output_padding = output_padding
         self.register_buffer('sharing_rates', torch.tensor(sharing_rates, dtype=torch.float32))
         self.input_size, self.input_indices, self.output_size, self.output_indices = make_organic(self.in_channels,
-                                                                                                  self.out_channels,
-                                                                                                  self.sharing_rates)
-        print(self.input_size)
-        print(self.output_size)
-        print(self.input_indices)
-        print(self.output_indices)
+            self.out_channels, self.sharing_rates)
         if transposed:
             self.weight = nn.Parameter(torch.Tensor(self.input_size, self.output_size, *kernel_size))
         else:
@@ -74,7 +67,7 @@ class _oConvNd(nn.Module):
             s += ', output_padding={output_padding}'
         if self.bias is None:
             s += ', bias=False'
-        return s.format(**self.__dict__)
+        return s.format(in_channels=self.in_channels, out_channels=self.out_channels, **self.__dict__)
 
 
 class oConv2d(_oConvNd):
@@ -86,7 +79,7 @@ class oConv2d(_oConvNd):
         padding = _nutple(padding)
         dilation = _nutple(dilation)
         super(oConv2d, self).__init__(in_channels, out_channels, kernel_size, stride, padding, dilation, False,
-                                      _nutple(0), sharing_rates, bias)
+            _nutple(0), sharing_rates, bias)
 
     def forward(self, input):
         input = input.split(self.in_channels.tolist(), dim=1)

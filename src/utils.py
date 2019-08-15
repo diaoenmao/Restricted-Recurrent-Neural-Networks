@@ -1,17 +1,13 @@
-import config
 import collections.abc as container_abcs
 import errno
-import numpy as np
 import os
-import time
-import torch
-import torch.nn as nn
-import torchvision
 from itertools import repeat
-from matplotlib import pyplot as plt
-from PIL import Image
+
+import numpy as np
+import torch
 from torchvision.utils import make_grid
 from torchvision.utils import save_image
+
 
 def makedir_exist_ok(dirpath):
     try:
@@ -23,179 +19,81 @@ def makedir_exist_ok(dirpath):
             raise
     return
 
-def save(input,dir,protocol = 2,mode='torch'):
-    dirname = os.path.dirname(dir)
+
+def save(input, path, protocol=2, mode='torch'):
+    dirname = os.path.dirname(path)
     makedir_exist_ok(dirname)
-    if(mode=='torch'):
-        torch.save(input,dir,pickle_protocol=protocol)
-    elif(mode=='numpy'):
-        np.save(dir,input)
+    if mode == 'torch':
+        torch.save(input, path, pickle_protocol=protocol)
+    elif mode == 'numpy':
+        np.save(path, input)
     else:
-        raise ValueError('Not supported save mode')
+        raise ValueError('Not valid save mode')
     return
 
-def load(dir,mode='torch'):
-    if(mode=='torch'):
-        return torch.load(dir, map_location=lambda storage, loc: storage)
-    elif(mode=='numpy'):
-        return np.load(dir)  
-    else:
-        raise ValueError('Not supported save mode')
-    return                
 
-def save_model(model, dir):
-    dirname = os.path.dirname(dir)
-    makedir_exist_ok(dirname)
-    torch.save(model.state_dict(), dir)
-    return
-    
-def load_model(model, dir):
-    checkpoint = torch.load(dir)
-    if isinstance(checkpoint, dict) and 'state_dict' in checkpoint:       
-        model.load_state_dict(checkpoint['state_dict'])
+def load(path, mode='torch'):
+    if mode == 'torch':
+        return torch.load(path, map_location=lambda storage, loc: storage)
+    elif mode == 'numpy':
+        return np.load(path)
     else:
-        model.load_state_dict(checkpoint)
-    return model
-    
-def print_model(model):
-    for p in model.parameters():
-        print(p)
-    return
-        
-def list_dir(root, prefix=False):
-    root = os.path.expanduser(root)
-    directories = list(
-        filter(
-            lambda p: os.path.isdir(os.path.join(root, p)),
-            os.listdir(root)))
-    if prefix is True:
-        directories = [os.path.join(root, d) for d in directories]
-    return directories
-
-def list_files(root, suffix, prefix=False):
-    root = os.path.expanduser(root)
-    files = list(
-        filter(
-            lambda p: os.path.isfile(os.path.join(root, p)) and p.endswith(suffix),
-            os.listdir(root)))
-    if prefix is True:
-        files = [os.path.join(root, d) for d in files]
-    return files
-    
-def save_img(img,path,nrow=0,batch_first=False):
-    if(img.dim()==4):
-        dirname = os.path.dirname(path)
-        makedir_exist_ok(dirname)
-        if(nrow!=0):
-            save_image(img,path,padding=0,nrow=nrow)
-        else:
-            save_image(img,path,padding=0)
-    elif(img.dim()==5 and nrow!=0):
-        dirname = os.path.dirname(path)
-        makedir_exist_ok(dirname)
-        seq_img = []
-        if(batch_first==False):
-            for i in range(img.size(1)):          
-                seq_img.append(make_grid(img[:,i,],nrow=nrow))
-        else:
-            for i in range(img.size(0)):          
-                seq_img.append(make_grid(img[i],nrow=nrow))
-        img = torch.stack(seq_img,0)
-        save_image(img,path,padding=0)
-    else:
-        raise ValueError('Not valid image to save')
+        raise ValueError('Not valid save mode')
     return
 
-def dict_to_device(input,device):
-    if(isinstance(input,dict)):
+
+def dict_to_device(input, device):
+    if isinstance(input, dict):
         for key in input:
-            if(isinstance(input[key], list)):
+            if isinstance(input[key], list):
                 for i in range(len(input[key])):
                     input[key][i] = input[key][i].to(device)
-            elif(isinstance(input[key], torch.Tensor)):
+            elif isinstance(input[key], torch.Tensor):
                 input[key] = input[key].to(device)
-            elif(isinstance(input[key], dict)):
+            elif isinstance(input[key], dict):
                 input[key] = dict_to_device(input[key], device)
             else:
-                raise ValueError('input type not supported')
+                raise ValueError('Not valid input type')
     else:
         input = input.to(device)
     return input
-    
+
+
 def ntuple(n):
     def parse(x):
         if isinstance(x, container_abcs.Iterable) and not isinstance(x, str):
             return x
         return tuple(repeat(x, n))
+
     return parse
 
-def apply_fn(module,fn):
+
+def apply_fn(module, fn):
     for n, m in module.named_children():
-        if(hasattr(m,fn)):
+        if hasattr(m, fn):
             exec('m.{0}()'.format(fn))
-        if(sum(1 for _ in m.named_children())!=0):
+        if sum(1 for _ in m.named_children()) != 0:
             exec('apply_fn(m,\'{0}\')'.format(fn))
     return
-    
-# ===================Function===================== 
-def p_inverse(A):
-    pinv = (A.t().matmul(A)).inverse().matmul(A.t())
-    return pinv
 
-def RGB_to_L(input):
-    output = 0.2989*input[:,[0],]+0.5870*input[:,[1],]+0.1140*input[:,[2],]
-    return output
-    
-def L_to_RGB(input):
-    output = input.expand(input.size(0),3,input.size(2),input.size(3))
-    return output
 
-def gumbel_softmax(logits, tau=1, hard=False, sample=True, dim=-1):
-    if(sample):
-        eps = 1e-20
-        U = torch.rand(logits.size(),device=logits.device)
-        noise = -(torch.log(-torch.log(U + eps) + eps))
-        gumbels = (logits + noise) / tau
+def repackage_hidden(h):
+    if isinstance(h, torch.Tensor):
+        return h.detach()
     else:
-        gumbels = logits / tau
-    y_soft = gumbels.softmax(dim)
-    if hard:
-        index = y_soft.max(dim,keepdim=True)[1]
-        y_hard = torch.zeros_like(logits).scatter_(dim,index,1.0)
-        ret = (y_hard - y_soft).detach() + y_soft
-    else:
-        ret = y_soft
-    return ret
+        return tuple(repackage_hidden(v) for v in h)
 
-def gumbel_softrank(logits, tau=1, hard=False, sample=True, dim=-1):
-    if(sample):
-        eps = 1e-20
-        U = torch.rand(logits.size(),device=logits.device)
-        noise = -(torch.log(-torch.log(U + eps) + eps))
-        gumbels = (logits + noise) / tau
-    else:
-        gumbels = logits / tau
-    y_soft = gumbels.softmax(dim)
-    if hard:
-        index = y_soft.topk(y_soft.size(dim),dim)[1].view(-1,1)
-        y_hard = logits.new_zeros(logits.size(dim),logits.size(dim)).scatter_(dim, index, 1.0)
-        ret = (y_hard - y_soft).detach() + y_soft
-    else:
-        ret = y_soft
-    return ret
 
-def normalize(input):
-    with torch.no_grad():
-        broadcast_size = [1]*input.dim()
-        broadcast_size[1] = input.size(1)
-        m,s = config.PARAM['stats']['img'].mean.view(broadcast_size).to(input.device),config.PARAM['stats']['img'].std.view(broadcast_size).to(input.device)
-        input = input.sub(m).div(s).detach()
-    return input   
+def batchify(data, batch_size):
+    num_batch = data.size(0) // batch_size
+    data = data.narrow(0, 0, num_batch * batch_size)
+    data = data.reshape(batch_size, -1)
+    return data
 
-def denormalize(input):
-    with torch.no_grad():
-        broadcast_size = [1]*input.dim()
-        broadcast_size[1] = input.size(1)
-        m,s = config.PARAM['stats']['img'].mean.view(broadcast_size).to(input.device),config.PARAM['stats']['img'].std.view(broadcast_size).to(input.device)
-        input = input.mul(s).add(m).detach()
+
+def make_batch(data, i, seq_len):
+    seq_len = min(seq_len, data.size(1) - 1 - i)
+    input = {}
+    input['line'] = data[:, i:i + seq_len]
+    input['symbol'] = data[:, i + 1:i + 1 + seq_len].contiguous().view(-1)
     return input

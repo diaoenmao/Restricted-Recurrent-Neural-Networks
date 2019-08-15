@@ -178,81 +178,6 @@ def collate(input):
 # r = torch.eq(y_1,y_2)
 # print(r[:,:,0,0])
 
-# if __name__ == '__main__':
-# batch_size = 2
-# dataset = fetch_dataset('Flickr30k')
-# train_loader = torch.utils.data.DataLoader(dataset=dataset['train'], batch_size=batch_size, pin_memory=True, shuffle=True, num_workers=0, collate_fn=input_collate)
-# print(len(dataset['train']))
-# print(len(dataset['test']))
-# for i, input in enumerate(train_loader):
-# input = collate(input)
-# input = dict_to_device(input,device)
-# print(input['img'].size())
-# exit()
-
-# if __name__ == '__main__':
-# m = nn.Sequential(
-# nn.ZeroPad2d((0, 0, 0, 0)),
-# nn.Conv2d(in_channels=3, out_channels=3, kernel_size=3, stride=1, padding=1)
-# )
-# #m = nn.Conv2d(3, 64, kernel_size=5, stride=2, padding=2)
-# #m = nn.ConvTranspose2d(3, 64, kernel_size=5, stride=2, padding=2)
-# #m = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
-# x = torch.randn(1, 3, 128, 128)
-# x = m(x)
-# print(x.size())
-# x = m(x)
-# print(x.size())
-# m = nn.ConvTranspose2d(32, 32, kernel_size=3, stride=2, padding=1, output_padding=1)
-# x = m(x)
-# print(x.size())
-# x = m(x)
-# print(x.size())
-
-# if __name__ == '__main__':
-# m_1 = Cell({'cell':'PixelShuffleCell','mode':'down','scale_factor':2,'groups':1})
-# m_3 = Cell({'cell':'PixelShuffleCell','mode':'down','scale_factor':2,'groups':3})
-# input = torch.randn(1,32*3,128,128)
-# output_1 = m_1(input)
-# output_3 = m_3(input)
-# print(torch.eq(output_1,output_3).all())
-
-
-# if __name__ == '__main__':
-# batch_size = 2
-# dataset = fetch_dataset('Kodak_patch')
-# train_loader = torch.utils.data.DataLoader(dataset=dataset['train'], batch_size=batch_size, pin_memory=True, shuffle=True, num_workers=0, collate_fn=input_collate)
-# print(len(dataset['train']))
-# print(len(dataset['test']))
-# m = Cell({'cell':'PixelShuffleCell','mode':'down','scale_factor':2})
-# for i, input in enumerate(train_loader):
-# input = collate(input)
-# input = dict_to_device(input,device)
-# output = input['img']
-# save_img(input['img'],'./output/img/image.png')
-# for j in range(3):
-# output = m(output)
-# save_img(output,'./output/img/image_shuffled_{}.png'.format(j))
-# exit()
-
-
-# if __name__ == '__main__':
-# batch_size = 2
-# dataset = fetch_dataset('Kodak_patch')
-# train_loader = torch.utils.data.DataLoader(dataset=dataset['train'], batch_size=batch_size, pin_memory=True, shuffle=True, num_workers=0, collate_fn=input_collate)
-# print(len(dataset['train']))
-# print(len(dataset['test']))
-# m1 = Cell({'cell':'PixelShuffleCell','mode':'down','scale_factor':2})
-# m2 = Cell({'cell':'PixelShuffleCell','mode':'up','scale_factor':2})
-# for i, input in enumerate(train_loader):
-# input = collate(input)
-# input = dict_to_device(input,device)
-# output1 = m1(m1(m1(input['img'])))
-# output2 = m2(m2(m2(output1)))
-# print(torch.eq(output2,input['img']).all())
-# exit()
-
-
 # def make_indices(num_channels,groups,sharing_rates,weight_size):
 #     shared_size = round(num_channels/groups * sharing_rates)
 #     nonshared_size = weight_size - shared_size
@@ -434,3 +359,8 @@ def collate(input):
 #     goutput = g(input.squeeze())
 #     print((output.squeeze()-goutput).abs().sum())
 #     print(torch.eq(output.squeeze(),goutput).all())
+
+# if __name__ == "__main__":
+#     dataset = fetch_dataset('PennTreebank')
+#     print(len(dataset.data['train']))
+

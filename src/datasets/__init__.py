@@ -1,23 +1,3 @@
-from .mnist import MNIST, EMNIST, FashionMNIST
-from .cifar import CIFAR10, CIFAR100
-from .svhn import SVHN
-from .imagenet import ImageNet
-from .folder import ImageFolder, DatasetFolder
-from .voc import VOCDetection, VOCSegmentation
-from .coco import CocoDetection, CocoCaptions
-from .cub import CUB2011
-from .wheatimage import WheatImage
-from .mosi import MOSI
-from .bits import BITS
-from .transforms import *
+from .language_modeling import PennTreebank,WikiText2, WikiText103
 
-
-__all__ = ('MNIST','EMNIST', 'FashionMNIST',
-           'CIFAR10', 'CIFAR100', 'SVHN',
-           'ImageNet',
-           'ImageFolder', 'DatasetFolder',
-           'VOCDetection', 'VOCSegmentation',         
-           'CocoCaptions', 'CocoDetection',
-           'CUB2011',
-           'WheatImage','MOSI',
-           'BITS')
+__all__ = ('PennTreebank', 'WikiText2', 'WikiText103')

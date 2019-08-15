@@ -9,11 +9,11 @@ device = config.PARAM['device']
 
 
 def Normalization(cell_info):
-    if (cell_info['mode'] == 'none'):
+    if cell_info['mode'] == 'none':
         return nn.Sequential()
-    elif (cell_info['mode'] == 'bn'):
+    elif cell_info['mode'] == 'bn':
         return nn.BatchNorm2d(cell_info['input_size'])
-    elif (cell_info['mode'] == 'in'):
+    elif cell_info['mode'] == 'in':
         return nn.InstanceNorm2d(cell_info['input_size'])
     else:
         raise ValueError('Normalization mode not supported')
@@ -21,28 +21,36 @@ def Normalization(cell_info):
 
 
 def Activation(cell_info):
-    if (cell_info['mode'] == 'none'):
+    if cell_info['mode'] == 'none':
         return nn.Sequential()
-    elif (cell_info['mode'] == 'tanh'):
+    elif cell_info['mode'] == 'tanh':
         return nn.Tanh()
-    elif (cell_info['mode'] == 'hardtanh'):
+    elif cell_info['mode'] == 'hardtanh':
         return nn.Hardtanh()
-    elif (cell_info['mode'] == 'relu'):
+    elif cell_info['mode'] == 'relu':
         return nn.ReLU(inplace=True)
-    elif (cell_info['mode'] == 'prelu'):
+    elif cell_info['mode'] == 'prelu':
         return nn.PReLU()
-    elif (cell_info['mode'] == 'elu'):
+    elif cell_info['mode'] == 'elu':
         return nn.ELU(inplace=True)
-    elif (cell_info['mode'] == 'selu'):
+    elif cell_info['mode'] == 'selu':
         return nn.SELU(inplace=True)
-    elif (cell_info['mode'] == 'celu'):
+    elif cell_info['mode'] == 'celu':
         return nn.CELU(inplace=True)
-    elif (cell_info['mode'] == 'sigmoid'):
+    elif cell_info['mode'] == 'sigmoid':
         return nn.Sigmoid()
-    elif (cell_info['mode'] == 'softmax'):
+    elif cell_info['mode'] == 'softmax':
         return nn.SoftMax()
     else:
         raise ValueError('Activation mode not supported')
+    return
+
+
+def Dropout(cell_info):
+    if cell_info['p'] == 0:
+        return nn.Sequential()
+    else:
+        return nn.Dropout(p=cell_info['p'], inplace=True)
     return
 
 
@@ -55,19 +63,19 @@ class BasicCell(nn.Module):
     def make_cell(self):
         cell_info = copy.deepcopy(self.cell_info)
         cell = nn.ModuleDict({})
-        if (cell_info['mode'] == 'Conv2d'):
+        if cell_info['mode'] == 'Conv2d':
             cell_in_info = {'cell': 'Conv2d', 'input_size': cell_info['input_size'],
                             'output_size': cell_info['output_size'],
                             'kernel_size': cell_info['kernel_size'], 'stride': cell_info['stride'],
                             'padding': cell_info['padding'], 'dilation': cell_info['dilation'],
                             'groups': cell_info['groups'], 'bias': cell_info['bias']}
-        elif (cell_info['mode'] == 'oConv2d'):
+        elif cell_info['mode'] == 'oConv2d':
             cell_in_info = {'cell': 'oConv2d', 'input_size': cell_info['input_size'],
                             'output_size': cell_info['output_size'],
                             'kernel_size': cell_info['kernel_size'], 'stride': cell_info['stride'],
                             'padding': cell_info['padding'], 'dilation': cell_info['dilation'],
                             'sharing_rates': cell_info['sharing_rates'], 'bias': cell_info['bias']}
-        elif (cell_info['mode'] == 'ConvTranspose2d'):
+        elif cell_info['mode'] == 'ConvTranspose2d':
             cell_in_info = {'cell': 'ConvTranspose2d', 'input_size': cell_info['input_size'],
                             'output_size': cell_info['output_size'],
                             'kernel_size': cell_info['kernel_size'], 'stride': cell_info['stride'],
@@ -107,8 +115,9 @@ class RLSTMCell(nn.Module):
                             'bias': cell_info['bias'], 'normalization': 'none', 'activation': 'none'}
             cell[i]['in'] = Cell(cell_in_info)
             cell[i]['activation'] = nn.ModuleList(
-                [Activation({'cell': 'Activation', 'mode': self.cell_info['activation']}),
-                 Activation({'cell': 'Activation', 'mode': self.cell_info['activation']})])
+                [Cell({'cell': 'Activation', 'mode': cell_info['activation']}),
+                 Cell({'cell': 'Activation', 'mode': cell_info['activation']})])
+            cell[i]['dropout'] = Cell({'cell': 'Dropout', 'p': cell_info['dropout']})
             cell_info['input_size'] = cell_info['output_size']
         return cell
 
@@ -121,9 +130,14 @@ class RLSTMCell(nn.Module):
         self.hidden = None
         return
 
+    def detach_hidden(self):
+        for i in range(len(self.cell)):
+            self.hidden[0][i].detach_()
+            self.hidden[1][i].detach_()
+
     def forward(self, input, hidden=None):
         x = input
-        if (hidden is None):
+        if hidden is None:
             self.hidden = self.init_hidden(
                 (x.size(0), self.cell_info['output_size'], *x.size()[3:])) if self.hidden is None else self.hidden
         else:
@@ -142,6 +156,7 @@ class RLSTMCell(nn.Module):
                 self.hidden[0][i] = outgate * self.cell[i]['activation'][1](self.hidden[1][i])
                 y.append(self.hidden[0][i])
             x = torch.stack(y, dim=1)
+            x = self.cell[i]['dropout'](x)
         return x
 
 
@@ -152,19 +167,21 @@ class Cell(nn.Module):
         self.cell = self.make_cell()
 
     def make_cell(self):
-        if (self.cell_info['cell'] == 'none'):
+        if self.cell_info['cell'] == 'none':
             cell = nn.Sequential()
-        elif (self.cell_info['cell'] == 'Normalization'):
+        elif self.cell_info['cell'] == 'Normalization':
             cell = Normalization(self.cell_info)
-        elif (self.cell_info['cell'] == 'Activation'):
+        elif self.cell_info['cell'] == 'Activation':
             cell = Activation(self.cell_info)
-        elif (self.cell_info['cell'] == 'Conv2d'):
+        elif self.cell_info['cell'] == 'Dropout':
+            cell = Dropout(self.cell_info)
+        elif self.cell_info['cell'] == 'Conv2d':
             default_cell_info = {'kernel_size': 3, 'stride': 1, 'padding': 1, 'dilation': 1, 'groups': 1, 'bias': False}
             self.cell_info = {**default_cell_info, **self.cell_info}
             cell = nn.Conv2d(self.cell_info['input_size'], self.cell_info['output_size'], self.cell_info['kernel_size'],
                              self.cell_info['stride'], self.cell_info['padding'], self.cell_info['dilation'],
                              self.cell_info['groups'], self.cell_info['bias'])
-        elif (self.cell_info['cell'] == 'oConv2d'):
+        elif self.cell_info['cell'] == 'oConv2d':
             default_cell_info = {'kernel_size': 3, 'stride': 1, 'padding': 1, 'dilation': 1, 'in_sharing_rates': 0,
                                  'out_sharing_rates': 0, 'bias': False}
             self.cell_info = {**default_cell_info, **self.cell_info}
@@ -172,7 +189,7 @@ class Cell(nn.Module):
                            self.cell_info['kernel_size'],
                            self.cell_info['stride'], self.cell_info['padding'], self.cell_info['dilation'],
                            self.cell_info['sharing_rates'], self.cell_info['bias'])
-        elif (self.cell_info['cell'] == 'ConvTranspose2d'):
+        elif self.cell_info['cell'] == 'ConvTranspose2d':
             default_cell_info = {'kernel_size': 3, 'stride': 1, 'padding': 1, 'output_padding': 0, 'dilation': 1,
                                  'groups': 1, 'bias': False}
             self.cell_info = {**default_cell_info, **self.cell_info}
@@ -181,12 +198,12 @@ class Cell(nn.Module):
                                       self.cell_info['stride'], self.cell_info['padding'],
                                       self.cell_info['output_padding'], self.cell_info['groups'],
                                       self.cell_info['bias'], self.cell_info['dilation'])
-        elif (self.cell_info['cell'] == 'BasicCell'):
+        elif self.cell_info['cell'] == 'BasicCell':
             default_cell_info = {'mode': 'Conv2d', 'kernel_size': 3, 'stride': 1, 'padding': 1, 'output_padding': 0,
                                  'dilation': 1, 'groups': 1, 'bias': False, 'normalization': 'bn', 'activation': 'relu'}
             self.cell_info = {**default_cell_info, **self.cell_info}
             cell = BasicCell(self.cell_info)
-        elif (self.cell_info['cell'] == 'RLSTMCell'):
+        elif self.cell_info['cell'] == 'RLSTMCell':
             default_cell_info = {'activation': 'tanh'}
             self.cell_info = {**default_cell_info, **self.cell_info}
             cell = RLSTMCell(self.cell_info)
