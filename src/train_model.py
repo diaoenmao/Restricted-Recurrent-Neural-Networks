@@ -203,7 +203,7 @@ def resume(model, optimizer, scheduler, model_TAG):
 
 def process_control_name():
     control_name = config.PARAM['control_name'].split('_')
-    config.PARAM['rnn'] = control_name[0]
+    config.PARAM['cell_name'] = control_name[0]
     config.PARAM['embedding_size'] = int(control_name[1])
     config.PARAM['hidden_size'] = int(control_name[2])
     config.PARAM['num_layer'] = int(control_name[3])

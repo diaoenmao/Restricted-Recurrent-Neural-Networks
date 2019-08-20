@@ -3,10 +3,10 @@ def init():
     PARAM = {
         'data_name': {'train': 'WikiText2', 'test': 'WikiText2'},
         'model_name': 'basic',
-        'control_name': 'lstm_200_200_5_0_0_1',
+        'control_name': 'GRU_200_200_5_0.9_0_0',
         'special_TAG': '',
         'optimizer_name': 'SGD',
-        'scheduler_name': 'ReduceLROnPlateau',
+        'scheduler_name': 'CosineAnnealingLR',
         'patience': 1,
         'lr': 10,
         'weight_decay': 1e-6,

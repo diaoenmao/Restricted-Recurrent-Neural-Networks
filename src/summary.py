@@ -159,13 +159,13 @@ def summarize(dataset, model):
         break
     for h in hooks:
         h.remove()
-    summary['total_num_params'] = 0
+    summary['total_num_param'] = 0
     for key in summary['module']:
         num_params = 0
         for name in summary['module'][key]['params']:
             num_params += (summary['module'][key]['params'][name]['mask'] > 0).sum().item()
-        summary['total_num_params'] += num_params
-    summary['total_space_params'] = abs(summary['total_num_params'] * 32. / 8 / (1024 ** 2.))
+        summary['total_num_param'] += num_params
+    summary['total_space_param'] = abs(summary['total_num_param'] * 32. / 8 / (1024 ** 2.))
     return summary
 
 
@@ -185,14 +185,14 @@ def parse_summary(summary):
         for name in summary['module'][key]['params']:
             num_params += (summary['module'][key]['params'][name]['mask'] > 0).sum().item()
         records.append([module_name, input_size, weight_size, output_size, num_params])
-    total_num_params = summary['total_num_params']
-    total_space_params = summary['total_space_params']
+    total_num_param = summary['total_num_param']
+    total_space_param = summary['total_space_param']
 
     table = tabulate(records, headers=headers, tablefmt='github')
     content += table + '\n'
     content += '================================================================\n'
-    content += 'Total Number of Parameters: {}\n'.format(total_num_params)
-    content += 'Total Space of Parameters (MB): {:.2f}\n'.format(total_space_params)
+    content += 'Total Number of Parameters: {}\n'.format(total_num_param)
+    content += 'Total Space of Parameters (MB): {:.2f}\n'.format(total_space_param)
     makedir_exist_ok('./output')
     content_file = open('./output/summary.md', 'w')
     content_file.write(content)
@@ -202,7 +202,7 @@ def parse_summary(summary):
 
 def process_control_name():
     control_name = config.PARAM['control_name'].split('_')
-    config.PARAM['rnn'] = control_name[0]
+    config.PARAM['cell_name'] = control_name[0]
     config.PARAM['embedding_size'] = int(control_name[1])
     config.PARAM['hidden_size'] = int(control_name[2])
     config.PARAM['num_layer'] = int(control_name[3])

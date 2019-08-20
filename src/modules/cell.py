@@ -94,6 +94,62 @@ class BasicCell(nn.Module):
         x = self.cell['activation'](self.cell['normalization'](self.cell['in'](x)))
         return x
 
+class RRNNCell(nn.Module):
+    def __init__(self, cell_info):
+        super(RRNNCell, self).__init__()
+        self.cell_info = cell_info
+        self.cell = self.make_cell()
+        self.hidden = None
+
+    def make_cell(self):
+        cell_info = copy.deepcopy(self.cell_info)
+        cell = nn.ModuleList([nn.ModuleDict({}) for _ in range(cell_info['num_layers'])])
+        _ntuple = ntuple(cell_info['num_layers'])
+        cell_info['sharing_rates'] = _ntuple(cell_info['sharing_rates'])
+        for i in range(cell_info['num_layers']):
+            cell_in_info = {'cell': 'oConv2d', 'input_size': (cell_info['input_size'], cell_info['output_size']),
+                            'output_size': ((cell_info['output_size'],),(cell_info['output_size'],)),
+                            'kernel_size': cell_info['kernel_size'], 'stride': cell_info['stride'],
+                            'padding': cell_info['padding'], 'sharing_rates': cell_info['sharing_rates'][i],
+                            'bias': cell_info['bias'], 'normalization': 'none', 'activation': 'none'}
+            cell[i]['in'] = Cell(cell_in_info)
+            cell[i]['activation'] = Cell({'cell': 'Activation', 'mode': cell_info['activation']})
+            cell[i]['dropout'] = Cell({'cell': 'Dropout', 'p': cell_info['dropout']})
+            cell_info['input_size'] = cell_info['output_size']
+        return cell
+
+    def init_hidden(self, hidden_size):
+        hidden = [torch.zeros(hidden_size, device=device) for _ in range(len(self.cell))]
+        return hidden
+
+    def free_hidden(self):
+        self.hidden = None
+        return
+
+    def detach_hidden(self):
+        for i in range(len(self.cell)):
+            self.hidden[i].detach_()
+
+    def forward(self, input, hidden=None):
+        x = input
+        if hidden is None:
+            self.hidden = self.init_hidden(
+                (x.size(0), self.cell_info['output_size'], *x.size()[3:])) if self.hidden is None else self.hidden
+        else:
+            self.hidden = hidden
+        for i in range(len(self.cell)):
+            y = []
+            for j in range(x.size(1)):
+                xhx = torch.cat([x[:, j], self.hidden[i]], dim=1)
+                gates = self.cell[i]['in'](xhx).chunk(2, 1)
+                cellgate = (gates[0] + gates[1])
+                cellgate = self.cell[i]['activation'](cellgate)
+                self.hidden[i] = cellgate
+                y.append(self.hidden[i])
+            x = torch.stack(y, dim=1)
+            x = self.cell[i]['dropout'](x)
+        return x
+
 
 class RLSTMCell(nn.Module):
     def __init__(self, cell_info):
@@ -160,6 +216,65 @@ class RLSTMCell(nn.Module):
         return x
 
 
+class RGRUCell(nn.Module):
+    def __init__(self, cell_info):
+        super(RGRUCell, self).__init__()
+        self.cell_info = cell_info
+        self.cell = self.make_cell()
+        self.hidden = None
+
+    def make_cell(self):
+        cell_info = copy.deepcopy(self.cell_info)
+        cell = nn.ModuleList([nn.ModuleDict({}) for _ in range(cell_info['num_layers'])])
+        _ntuple = ntuple(cell_info['num_layers'])
+        cell_info['sharing_rates'] = _ntuple(cell_info['sharing_rates'])
+        for i in range(cell_info['num_layers']):
+            cell_in_info = {'cell': 'oConv2d', 'input_size': (cell_info['input_size'], cell_info['output_size']),
+                            'output_size': ((cell_info['output_size'],) * 3,(cell_info['output_size'],) * 3),
+                            'kernel_size': cell_info['kernel_size'], 'stride': cell_info['stride'],
+                            'padding': cell_info['padding'], 'sharing_rates': cell_info['sharing_rates'][i],
+                            'bias': cell_info['bias'], 'normalization': 'none', 'activation': 'none'}
+            cell[i]['in'] = Cell(cell_in_info)
+            cell[i]['activation'] = Cell({'cell': 'Activation', 'mode': cell_info['activation']})
+            cell[i]['dropout'] = Cell({'cell': 'Dropout', 'p': cell_info['dropout']})
+            cell_info['input_size'] = cell_info['output_size']
+        return cell
+
+    def init_hidden(self, hidden_size):
+        hidden = [torch.zeros(hidden_size, device=device) for _ in range(len(self.cell))]
+        return hidden
+
+    def free_hidden(self):
+        self.hidden = None
+        return
+
+    def detach_hidden(self):
+        for i in range(len(self.cell)):
+            self.hidden[i].detach_()
+
+    def forward(self, input, hidden=None):
+        x = input
+        if hidden is None:
+            self.hidden = self.init_hidden(
+                (x.size(0), self.cell_info['output_size'], *x.size()[3:])) if self.hidden is None else self.hidden
+        else:
+            self.hidden = hidden
+        for i in range(len(self.cell)):
+            y = []
+            for j in range(x.size(1)):
+                xhx = torch.cat([x[:, j], self.hidden[i]], dim=1)
+                gates = self.cell[i]['in'](xhx).chunk(2, 1)
+                gates_0, gates_1 = gates[0].chunk(3, 1), gates[1].chunk(3, 1)
+                forgetgate = torch.sigmoid(gates_0[0] + gates_1[0])
+                outgate = torch.sigmoid(gates_0[1] + gates_1[1])
+                cellgate = self.cell[i]['activation'](gates_0[2] + forgetgate*gates_1[2])
+                self.hidden[i] = (1-outgate) * cellgate + outgate * self.hidden[i]
+                y.append(self.hidden[i])
+            x = torch.stack(y, dim=1)
+            x = self.cell[i]['dropout'](x)
+        return x
+
+
 class Cell(nn.Module):
     def __init__(self, cell_info):
         super(Cell, self).__init__()
@@ -203,12 +318,20 @@ class Cell(nn.Module):
                                  'dilation': 1, 'groups': 1, 'bias': False, 'normalization': 'bn', 'activation': 'relu'}
             self.cell_info = {**default_cell_info, **self.cell_info}
             cell = BasicCell(self.cell_info)
+        elif self.cell_info['cell'] == 'RRNNCell':
+            default_cell_info = {'activation': 'tanh'}
+            self.cell_info = {**default_cell_info, **self.cell_info}
+            cell = RRNNCell(self.cell_info)
+        elif self.cell_info['cell'] == 'RGRUCell':
+            default_cell_info = {'activation': 'tanh'}
+            self.cell_info = {**default_cell_info, **self.cell_info}
+            cell = RGRUCell(self.cell_info)
         elif self.cell_info['cell'] == 'RLSTMCell':
             default_cell_info = {'activation': 'tanh'}
             self.cell_info = {**default_cell_info, **self.cell_info}
             cell = RLSTMCell(self.cell_info)
         else:
-            raise ValueError('{} model mode not supported'.format(self.cell_info['cell']))
+            raise ValueError('Not valid {} model mode'.format(self.cell_info['cell']))
         return cell
 
     def forward(self, *input):

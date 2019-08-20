@@ -1,0 +1,23 @@
+An Empirical Exploration of Recurrent Network Architectures
+Compression of Recurrent Neural Networks for Efficient Language Modeling
+Deep compression_ Compressing deep neural network with pruning, trained quantization and huffman coding
+Learning Phrase Representations using RNN Encoder-Decoder for Statistical Machine Translation
+Long short-term memory recurrent neural network architectures for large scale acoustic modeling.
+Long short-term memory
+LSTM_ A Search Space Odyssey
+On the compression of recurrent neural networks with an application to LVCSR acoustic modeling for embedded speech recognition
+Performance of Three Slim Variants of The Long Short-Term Memory (LSTM) Layer
+Recurrent Neural Network Regularization
+Regularizing and Optimizing LSTM Language Models
+Using the Output Embedding to Improve Language Models
+CondenseNet_ An Efficient DenseNet using Learned Group Convolutions
+MobileNets Efficient Convolutional Neural Networks for Mobile Vision
+ShuffleNet_ An Extremely Efficient Convolutional Neural Network for Mobile
+Learning Structured Sparsity in Deep Neural Networks
+A Survey of Model Compression and Acceleration for Deep Neural Networks
+Dropout: A Simple Way to Prevent Neural Networks from Overfitting
+Context Dependent Recurrent Neural Network Language Model
+SGDR: Stochastic Gradient Descent with Warm Restarts
+Compressing Recurrent Neural Network with Tensor Train
+Learning Compact Recurrent Neural Networks
+Bayesian compression for natural language processing

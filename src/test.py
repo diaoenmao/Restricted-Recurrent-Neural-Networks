@@ -318,7 +318,7 @@ def collate(input):
 #     bias = True
 #     model_info = {'cell': 'RLSTMCell', 'num_layers': 2, 'input_size': in_channels, 'output_size': out_channels,
 #                   'kernel_size': kernel_size, 'stride': stride, 'padding': padding, 'sharing_rates': sharing_rates,
-#                   'bias': bias, 'normalization': 'none', 'activation': 'tanh'}
+#                   'bias': bias, 'normalization': 'none', 'activation': 'tanh', 'dropout':0}
 #     model = Cell(model_info).to(device)
 #     a = {name: param for name, param in model.named_parameters()}
 #     print(a.keys())
@@ -330,10 +330,10 @@ def collate(input):
 #     g._parameters['weight_ih_l1'].data.copy_(a['cell.cell.1.in.cell.weight'].squeeze().data[:4*out_channels,:out_channels])
 #     g._parameters['weight_hh_l0'].data.copy_(a['cell.cell.0.in.cell.weight'].squeeze().data[4*out_channels:,:out_channels])
 #     g._parameters['weight_hh_l1'].data.copy_(a['cell.cell.1.in.cell.weight'].squeeze().data[4*out_channels:,:out_channels])
-#     g._parameters['bias_ih_l0'].data.copy_(a['cell.cell.0.in.cell.bias'].squeeze().data[:4 * out_channels:])
-#     g._parameters['bias_hh_l0'].data.copy_( a['cell.cell.0.in.cell.bias'].squeeze().data[4 * out_channels:])
-#     g._parameters['bias_ih_l1'].data.copy_(a['cell.cell.1.in.cell.bias'].squeeze().data[:4 * out_channels:])
-#     g._parameters['bias_hh_l1'].data.copy_( a['cell.cell.1.in.cell.bias'].squeeze().data[4 * out_channels:])
+#     g._parameters['bias_ih_l0'].data.copy_(a['cell.cell.0.in.cell.bias'].squeeze().data[:4 * out_channels])
+#     g._parameters['bias_hh_l0'].data.copy_(a['cell.cell.0.in.cell.bias'].squeeze().data[4 * out_channels:])
+#     g._parameters['bias_ih_l1'].data.copy_(a['cell.cell.1.in.cell.bias'].squeeze().data[:4 * out_channels])
+#     g._parameters['bias_hh_l1'].data.copy_(a['cell.cell.1.in.cell.bias'].squeeze().data[4 * out_channels:])
 #     goutput = g(input.squeeze())
 #     print((output.squeeze()-goutput[0]).abs().sum())
 #     print(torch.eq(output.squeeze(),goutput[0]).all())
@@ -364,3 +364,71 @@ def collate(input):
 #     dataset = fetch_dataset('PennTreebank')
 #     print(len(dataset.data['train']))
 
+
+# if __name__ == "__main__":
+#     batch_size = 3
+#     time_steps = 2
+#     num_layers = 2
+#     in_channels = 10
+#     out_channels = 20
+#     kernel_size = 1
+#     stride = 1
+#     padding = 0
+#     dilation = 1
+#     sharing_rates = [0, 0]
+#     bias = True
+#     model_info = {'cell': 'RRNNCell', 'num_layers': 2, 'input_size': in_channels, 'output_size': out_channels,
+#                   'kernel_size': kernel_size, 'stride': stride, 'padding': padding, 'sharing_rates': sharing_rates,
+#                   'bias': bias, 'normalization': 'none', 'activation': 'tanh', 'dropout':0}
+#     model = Cell(model_info).to(device)
+#     a = {name: param for name, param in model.named_parameters()}
+#     print(a.keys())
+#     input = torch.randn(batch_size, time_steps, in_channels, 1, 1).to(device)
+#     output = model(input)
+#     print(output.size())
+#     g = nn.RNN(in_channels, out_channels, num_layers, bias, batch_first=True).to(device)
+#     g._parameters['weight_ih_l0'].data.copy_(a['cell.cell.0.in.cell.weight'].squeeze().data[:out_channels,:in_channels])
+#     g._parameters['weight_ih_l1'].data.copy_(a['cell.cell.1.in.cell.weight'].squeeze().data[:out_channels,:out_channels])
+#     g._parameters['weight_hh_l0'].data.copy_(a['cell.cell.0.in.cell.weight'].squeeze().data[out_channels:,:out_channels])
+#     g._parameters['weight_hh_l1'].data.copy_(a['cell.cell.1.in.cell.weight'].squeeze().data[out_channels:,:out_channels])
+#     g._parameters['bias_ih_l0'].data.copy_(a['cell.cell.0.in.cell.bias'].squeeze().data[:out_channels])
+#     g._parameters['bias_hh_l0'].data.copy_(a['cell.cell.0.in.cell.bias'].squeeze().data[out_channels:])
+#     g._parameters['bias_ih_l1'].data.copy_(a['cell.cell.1.in.cell.bias'].squeeze().data[:out_channels])
+#     g._parameters['bias_hh_l1'].data.copy_(a['cell.cell.1.in.cell.bias'].squeeze().data[out_channels:])
+#     goutput = g(input.squeeze())
+#     print((output.squeeze()-goutput[0]).abs().sum())
+#     print(torch.eq(output.squeeze(),goutput[0]).all())
+
+# if __name__ == "__main__":
+#     batch_size = 3
+#     time_steps = 2
+#     num_layers = 2
+#     in_channels = 10
+#     out_channels = 20
+#     kernel_size = 1
+#     stride = 1
+#     padding = 0
+#     dilation = 1
+#     sharing_rates = [0, 0]
+#     bias = True
+#     model_info = {'cell': 'RGRUCell', 'num_layers': 2, 'input_size': in_channels, 'output_size': out_channels,
+#                   'kernel_size': kernel_size, 'stride': stride, 'padding': padding, 'sharing_rates': sharing_rates,
+#                   'bias': bias, 'normalization': 'none', 'activation': 'tanh', 'dropout':0}
+#     model = Cell(model_info).to(device)
+#     a = {name: param for name, param in model.named_parameters()}
+#     print(a.keys())
+#     input = torch.randn(batch_size, time_steps, in_channels, 1, 1).to(device)
+#     output = model(input)
+#     print(output.size())
+#     g = nn.GRU(in_channels, out_channels, num_layers, bias, batch_first=True).to(device)
+#     g._parameters['weight_ih_l0'].data.copy_(a['cell.cell.0.in.cell.weight'].squeeze().data[:3*out_channels,:in_channels])
+#     g._parameters['weight_ih_l1'].data.copy_(a['cell.cell.1.in.cell.weight'].squeeze().data[:3*out_channels,:out_channels])
+#     g._parameters['weight_hh_l0'].data.copy_(a['cell.cell.0.in.cell.weight'].squeeze().data[3*out_channels:,:out_channels])
+#     g._parameters['weight_hh_l1'].data.copy_(a['cell.cell.1.in.cell.weight'].squeeze().data[3*out_channels:,:out_channels])
+#     g._parameters['bias_ih_l0'].data.copy_(a['cell.cell.0.in.cell.bias'].squeeze().data[:3*out_channels])
+#     g._parameters['bias_hh_l0'].data.copy_(a['cell.cell.0.in.cell.bias'].squeeze().data[3*out_channels:])
+#     g._parameters['bias_ih_l1'].data.copy_(a['cell.cell.1.in.cell.bias'].squeeze().data[:3*out_channels])
+#     g._parameters['bias_hh_l1'].data.copy_(a['cell.cell.1.in.cell.bias'].squeeze().data[3*out_channels:])
+#     goutput = g(input.squeeze())
+#     print((output.squeeze()-goutput[0]).abs().sum())
+#     print(torch.eq(output.squeeze(),goutput[0]).all())

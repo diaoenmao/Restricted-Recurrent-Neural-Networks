@@ -40,13 +40,17 @@ class Model(nn.Module):
 
 def basic():
     output_embedding_size = config.PARAM['embedding_size'] if config.PARAM['tied'] else config.PARAM['hidden_size']
+    cell_name = 'R{}Cell'.format(config.PARAM['cell_name'])
     config.PARAM['model'] = {}
-    config.PARAM['model']['rnn'] = ({'cell': 'RLSTMCell', 'input_size': config.PARAM['embedding_size'], 'output_size': config.PARAM['hidden_size'],
+    config.PARAM['model']['rnn'] = (
+        {'cell': cell_name, 'input_size': config.PARAM['embedding_size'], 'output_size': config.PARAM['hidden_size'],
         'num_layers': config.PARAM['num_layer'] - 3, 'kernel_size': 1, 'stride': 1, 'padding': 0,
         'sharing_rates': config.PARAM['sharing_rates'], 'activation': config.PARAM['activation'], 'bias': True,
-        'dropout': config.PARAM['dropout']}, {'cell': 'RLSTMCell', 'input_size': config.PARAM['hidden_size'], 'output_size': output_embedding_size,
+        'dropout': config.PARAM['dropout']},
+        {'cell': cell_name, 'input_size': config.PARAM['hidden_size'], 'output_size': output_embedding_size,
         'num_layers': 1, 'kernel_size': 1, 'stride': 1, 'padding': 0,
         'sharing_rates': config.PARAM['sharing_rates'], 'activation': config.PARAM['activation'], 'bias': True,
-        'dropout': 0})
+        'dropout': 0}
+    )
     model = Model()
     return model
