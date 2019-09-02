@@ -43,13 +43,13 @@ def runExperiment(model_TAG):
     torch.cuda.manual_seed(seed)
     config.PARAM['randomGen'] = np.random.RandomState(seed)
     dataset = fetch_dataset(data_name=config.PARAM['data_name']['train'])
-    config.PARAM['vocab'] = dataset.vocab
+    config.PARAM['vocab'] = dataset['train'].vocab
     batch_dataset = {}
     print(config.PARAM)
-    for split in dataset.data_file:
-        batch_dataset[split] = batchify(dataset.data[split], config.PARAM['batch_size'][split])
-        print('{} data size {}, Number of Batches {}'.format(split, len(dataset.data[split]),
-            len(dataset.data[split]) // config.PARAM['batch_size'][split]))
+    for split in dataset['train'].data_file:
+        batch_dataset[split] = batchify(dataset[split].data, config.PARAM['batch_size'][split])
+        print('{} data size {}, Number of Batches {}'.format(split, len(dataset[split].data),
+            len(dataset[split].data) // config.PARAM['batch_size'][split]))
     model = eval('models.{}().to(device)'.format(config.PARAM['model_name']))
     optimizer = make_optimizer(model)
     scheduler = make_scheduler(optimizer)

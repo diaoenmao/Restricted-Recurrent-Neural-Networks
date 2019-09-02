@@ -1,5 +1,8 @@
 import hashlib
 import os
+import gzip
+import zipfile
+import tarfile
 
 from tqdm import tqdm
 
@@ -23,7 +26,6 @@ def check_integrity(fpath, md5=None):
         return False
     md5o = hashlib.md5()
     with open(fpath, 'rb') as f:
-        # read in 1MB chunks
         for chunk in iter(lambda: f.read(1024 * 1024), b''):
             md5o.update(chunk)
     md5c = md5o.hexdigest()
@@ -34,27 +36,40 @@ def check_integrity(fpath, md5=None):
 
 def download_url(url, root, filename, md5):
     from six.moves import urllib
-
     root = os.path.expanduser(root)
     fpath = os.path.join(root, filename)
-
     makedir_exist_ok(root)
-
     if os.path.isfile(fpath) and check_integrity(fpath, md5):
         print('Using downloaded and verified file: ' + fpath)
     else:
         try:
             print('Downloading ' + url + ' to ' + fpath)
-            urllib.request.urlretrieve(
-                url, fpath,
-                reporthook=make_bar_updater(tqdm(unit='B', unit_scale=True))
-            )
+            urllib.request.urlretrieve(url, fpath, reporthook=make_bar_updater(tqdm(unit='B', unit_scale=True)))
         except OSError:
             if url[:5] == 'https':
                 url = url.replace('https:', 'http:')
                 print('Failed download. Trying https -> http instead.'
                       ' Downloading ' + url + ' to ' + fpath)
-                urllib.request.urlretrieve(
-                    url, fpath,
-                    reporthook=make_bar_updater(tqdm(unit='B', unit_scale=True))
-                )
+                urllib.request.urlretrieve(url, fpath, reporthook=make_bar_updater(tqdm(unit='B', unit_scale=True)))
+    return
+
+
+def extract_file(src, dest=None, delete=False):
+    print('Extracting {}'.format(src))
+    dest = os.path.dirname(src) if dest is None else dest
+    filename = os.path.basename(src)
+    if filename.endswith('.zip'):
+        with zipfile.ZipFile(src, "r") as zip_f:
+            zip_f.extractall(dest)
+    elif filename.endswith('.tar'):
+        with tarfile.open(src) as tar_f:
+            tar_f.extractall(dest)
+    elif filename.endswith('.tar.gz'):
+        with tarfile.open(src, 'r:gz') as tar_f:
+            tar_f.extractall(dest)
+    elif filename.endswith('.gz'):
+        with open(src.replace('.gz', ''), 'wb') as out_f, gzip.GzipFile(src) as zip_f:
+            out_f.write(zip_f.read())
+    if delete:
+        os.remove(src)
+    return

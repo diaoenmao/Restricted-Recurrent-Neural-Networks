@@ -8,7 +8,7 @@ def init():
         'optimizer_name': 'SGD',
         'scheduler_name': 'CosineAnnealingLR',
         'patience': 1,
-        'lr': 10,
+        'lr': 1,
         'weight_decay': 1e-6,
         'milestones': [150, 250],
         'threshold': 1e-4,

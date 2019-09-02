@@ -31,8 +31,8 @@ def main():
 
 def runExperiment():
     dataset = fetch_dataset(data_name=config.PARAM['data_name']['train'])
-    batch_dataset = batchify(dataset.data['train'], config.PARAM['batch_size']['train'])
-    config.PARAM['vocab'] = dataset.vocab
+    batch_dataset = batchify(dataset['train'].data, config.PARAM['batch_size']['train'])
+    config.PARAM['vocab'] = dataset['train'].vocab
     print(config.PARAM)
 
     model = eval('models.{}().to(device)'.format(config.PARAM['model_name']))
