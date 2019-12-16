@@ -37,5 +37,5 @@ This is an implementation of [Restricted Recurrent Neural Networks](https://arxi
 
 ## Acknowledgement
 *Enmao Diao  
-Jie Ding
+Jie Ding  
 Vahid Tarokh*
