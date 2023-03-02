@@ -1,6 +1,6 @@
 # Restricted Recurrent Neural Networks
 
-[IEEE BigData 2019] This is an implementation of [Restricted Recurrent Neural Networks](https://arxiv.org/abs/1908.07724) (RRNN)  
+[IEEE BigData 2019] This is an implementation of [Restricted Recurrent Neural Networks](https://arxiv.org/abs/1908.07724)
 ![illustration](/img/illustration.png)
  
 ## Requirements
